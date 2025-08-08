@@ -12,7 +12,7 @@ Example:
     python batch_mzml_to_hdf5.py /path/to/hypermarker/formatted/batch01
 
 Output:
-    HDF5 files will be saved to: hdf5/{batch_directory_name}/
+    HDF5 files will be saved to: /path/to/hypermarker/formatted/hdf5/{batch_directory_name}/
 """
 
 import sys
@@ -89,8 +89,10 @@ def process_batch_directory(batch_dir_path, base_output_dir="hdf5"):
     # Get batch directory name
     batch_name = batch_path.name
     
-    # Create output directory structure
-    output_dir = Path(base_output_dir) / batch_name
+    # Create output directory structure in the parent directory of the batch
+    parent_dir = batch_path.parent
+    output_base = parent_dir / base_output_dir
+    output_dir = output_base / batch_name
     output_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"Output directory: {output_dir}")
@@ -150,7 +152,8 @@ Examples:
   python batch_mzml_to_hdf5.py /path/to/batch01
   python batch_mzml_to_hdf5.py /Users/maxvandenboom/Docs/Coding/AI/active/data/hypermarker/formatted/batch01
   
-Output files will be saved to: hdf5/{batch_directory_name}/
+Output files will be saved to: {parent_directory}/hdf5/{batch_directory_name}/
+For example: /Users/maxvandenboom/Docs/Coding/AI/active/data/hypermarker/formatted/hdf5/batch01/
         """
     )
     
@@ -162,7 +165,7 @@ Output files will be saved to: hdf5/{batch_directory_name}/
     parser.add_argument(
         "--output-dir",
         default="hdf5",
-        help="Base output directory for HDF5 files (default: hdf5)"
+        help="Base output directory name for HDF5 files, created in parent directory (default: hdf5)"
     )
     
     args = parser.parse_args()
