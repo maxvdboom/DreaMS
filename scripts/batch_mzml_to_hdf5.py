@@ -17,6 +17,7 @@ Output:
 
 import sys
 import os
+import shutil
 from pathlib import Path
 from tqdm import tqdm
 import argparse
@@ -29,25 +30,33 @@ except ImportError:
     sys.exit(1)
 
 
-def convert_mzml_to_hdf5(mzml_path, output_path):
+def convert_mzml_to_hdf5(mzml_path, output_dir):
     """
-    Convert a single mzML file to HDF5 format.
+    Convert a single mzML file to HDF5 format and move to output directory.
     
     Args:
         mzml_path (Path): Path to the input mzML file
-        output_path (Path): Path for the output HDF5 file
+        output_dir (Path): Directory where the HDF5 file should be moved
     
     Returns:
         bool: True if successful, False otherwise
     """
     try:
-        # Load mzML data
+        # Load mzML data (this automatically creates HDF5 in the same directory)
         print(f"Processing: {mzml_path.name}")
         msdata = MSData.from_mzml(str(mzml_path))
         
-        # Save as HDF5
-        msdata.save(str(output_path))
-        print(f"Saved: {output_path}")
+        # The HDF5 file is automatically created in the same directory as the mzML
+        expected_hdf5_path = mzml_path.with_suffix('.hdf5')
+        
+        if not expected_hdf5_path.exists():
+            print(f"Error: Expected HDF5 file not found: {expected_hdf5_path}")
+            return False
+        
+        # Move the HDF5 file to the output directory
+        output_path = output_dir / expected_hdf5_path.name
+        shutil.move(str(expected_hdf5_path), str(output_path))
+        print(f"Moved to: {output_path}")
         return True
         
     except Exception as e:
@@ -102,15 +111,28 @@ def process_batch_directory(batch_dir_path, base_output_dir="hdf5"):
     for mzml_file in tqdm(mzml_files, desc="Converting files"):
         # Create output filename (replace .mzML with .hdf5)
         output_filename = mzml_file.stem + ".hdf5"
-        output_path = output_dir / output_filename
+        final_output_path = output_dir / output_filename
         
-        # Skip if output file already exists
-        if output_path.exists():
-            print(f"Skipping {mzml_file.name} (HDF5 file already exists)")
+        # Skip if output file already exists in the target directory
+        if final_output_path.exists():
+            print(f"Skipping {mzml_file.name} (HDF5 file already exists in output directory)")
             continue
         
-        # Convert file
-        if convert_mzml_to_hdf5(mzml_file, output_path):
+        # Also check if HDF5 already exists in the source directory
+        source_hdf5_path = mzml_file.with_suffix('.hdf5')
+        if source_hdf5_path.exists():
+            print(f"Found existing HDF5 for {mzml_file.name}, moving to output directory")
+            try:
+                shutil.move(str(source_hdf5_path), str(final_output_path))
+                print(f"Moved existing file to: {final_output_path}")
+                successful += 1
+            except Exception as e:
+                print(f"Error moving existing HDF5 file {source_hdf5_path.name}: {str(e)}")
+                failed += 1
+            continue
+        
+        # Convert file and move to output directory
+        if convert_mzml_to_hdf5(mzml_file, output_dir):
             successful += 1
         else:
             failed += 1
