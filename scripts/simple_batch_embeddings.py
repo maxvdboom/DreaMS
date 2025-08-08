@@ -7,8 +7,42 @@ Can be imported and used in notebooks or other scripts.
 
 import os
 import numpy as np
+import h5py
 from pathlib import Path
 from dreams.api import dreams_embeddings
+
+
+def validate_hdf5_file(file_path):
+    """
+    Validate if an HDF5 file is readable and not corrupted.
+    
+    Args:
+        file_path (Path): Path to the HDF5 file
+        
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    try:
+        # Check if file exists and has reasonable size
+        if not file_path.exists():
+            return False, "File does not exist"
+        
+        file_size = file_path.stat().st_size
+        if file_size == 0:
+            return False, "File is empty (0 bytes)"
+        
+        if file_size < 1024:  # Less than 1KB is probably too small for a valid HDF5
+            return False, f"File too small ({file_size} bytes)"
+        
+        # Try to open the HDF5 file to check if it's valid
+        with h5py.File(file_path, 'r') as f:
+            # Try to list keys to ensure the file structure is accessible
+            list(f.keys())
+        
+        return True, "Valid"
+        
+    except Exception as e:
+        return False, f"HDF5 validation failed: {str(e)}"
 
 
 def process_batch_embeddings(batch_dir_path, verbose=True):
@@ -53,37 +87,81 @@ def process_batch_embeddings(batch_dir_path, verbose=True):
     if verbose:
         print(f"Found {len(hdf5_files)} HDF5 files to process")
     
-    results = {}
+    # Validate files first
+    valid_files = []
+    invalid_files = []
     
-    # Process each HDF5 file
-    for i, hdf5_file in enumerate(hdf5_files, 1):
+    if verbose:
+        print("\nValidating HDF5 files...")
+    
+    for hdf5_file in hdf5_files:
+        is_valid, error_msg = validate_hdf5_file(hdf5_file)
+        if is_valid:
+            valid_files.append(hdf5_file)
+        else:
+            invalid_files.append((hdf5_file, error_msg))
+            if verbose:
+                print(f"INVALID: {hdf5_file.name} - {error_msg}")
+    
+    if verbose:
+        print(f"\nValidation complete:")
+        print(f"  Valid files: {len(valid_files)}")
+        print(f"  Invalid files: {len(invalid_files)}")
+    
+    if not valid_files:
+        if verbose:
+            print("No valid HDF5 files found to process!")
+        return {}
+    
+    results = {}
+    successful_processes = 0
+    failed_processes = 0
+    
+    # Process each valid HDF5 file
+    for i, hdf5_file in enumerate(valid_files, 1):
         try:
             if verbose:
-                print(f"\n[{i}/{len(hdf5_files)}] Processing: {hdf5_file.name}")
-            
-            # Generate embeddings
-            embs = dreams_embeddings(str(hdf5_file))
+                print(f"\n[{i}/{len(valid_files)}] Processing: {hdf5_file.name}")
             
             # Create output filename (replace .hdf5 with .npy)
             output_filename = hdf5_file.stem + ".npy"
             output_path = embs_dir / output_filename
             
+            # Check if output file already exists
+            if output_path.exists():
+                if verbose:
+                    print(f"Embeddings file already exists, skipping: {output_path}")
+                results[str(hdf5_file)] = str(output_path)
+                successful_processes += 1
+                continue
+            
+            # Generate embeddings
+            embs = dreams_embeddings(str(hdf5_file))
+            
             # Save embeddings
             np.save(output_path, embs)
             
             results[str(hdf5_file)] = str(output_path)
+            successful_processes += 1
             
             if verbose:
                 print(f"Saved embeddings to: {output_path}")
                 print(f"Embeddings shape: {embs.shape}")
             
         except Exception as e:
+            failed_processes += 1
             if verbose:
                 print(f"Error processing {hdf5_file}: {str(e)}")
+                # Optionally show full traceback for debugging
+                import traceback
+                traceback.print_exc()
             continue
     
     if verbose:
-        print(f"\nProcessing complete! {len(results)} files processed successfully.")
+        print(f"\nProcessing complete!")
+        print(f"  Successfully processed: {successful_processes}")
+        print(f"  Failed to process: {failed_processes}")
+        print(f"  Invalid files skipped: {len(invalid_files)}")
         print(f"Embeddings saved to: {embs_dir}")
     
     return results

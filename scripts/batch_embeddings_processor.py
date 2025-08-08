@@ -18,9 +18,43 @@ The script will:
 import os
 import sys
 import numpy as np
+import h5py
 from pathlib import Path
 from tqdm import tqdm
 from dreams.api import dreams_embeddings
+
+
+def validate_hdf5_file(file_path):
+    """
+    Validate if an HDF5 file is readable and not corrupted.
+    
+    Args:
+        file_path (Path): Path to the HDF5 file
+        
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    try:
+        # Check if file exists and has reasonable size
+        if not file_path.exists():
+            return False, "File does not exist"
+        
+        file_size = file_path.stat().st_size
+        if file_size == 0:
+            return False, "File is empty (0 bytes)"
+        
+        if file_size < 1024:  # Less than 1KB is probably too small for a valid HDF5
+            return False, f"File too small ({file_size} bytes)"
+        
+        # Try to open the HDF5 file to check if it's valid
+        with h5py.File(file_path, 'r') as f:
+            # Try to list keys to ensure the file structure is accessible
+            list(f.keys())
+        
+        return True, "Valid"
+        
+    except Exception as e:
+        return False, f"HDF5 validation failed: {str(e)}"
 
 
 def process_batch_directory(batch_dir_path):
@@ -57,27 +91,68 @@ def process_batch_directory(batch_dir_path):
     
     print(f"Found {len(hdf5_files)} HDF5 files to process")
     
-    # Process each HDF5 file
-    for hdf5_file in tqdm(hdf5_files, desc="Processing HDF5 files"):
+    # Validate files first
+    valid_files = []
+    invalid_files = []
+    
+    print("\nValidating HDF5 files...")
+    for hdf5_file in hdf5_files:
+        is_valid, error_msg = validate_hdf5_file(hdf5_file)
+        if is_valid:
+            valid_files.append(hdf5_file)
+        else:
+            invalid_files.append((hdf5_file, error_msg))
+            print(f"INVALID: {hdf5_file.name} - {error_msg}")
+    
+    print(f"\nValidation complete:")
+    print(f"  Valid files: {len(valid_files)}")
+    print(f"  Invalid files: {len(invalid_files)}")
+    
+    if not valid_files:
+        print("No valid HDF5 files found to process!")
+        return
+    
+    # Process each valid HDF5 file
+    successful_processes = 0
+    failed_processes = 0
+    
+    for hdf5_file in tqdm(valid_files, desc="Processing HDF5 files"):
         try:
             # Generate embeddings
             print(f"\nProcessing: {hdf5_file.name}")
-            embs = dreams_embeddings(str(hdf5_file))
             
-            # Create output filename (replace .hdf5 with .npy)
+            # Check if output file already exists
             output_filename = hdf5_file.stem + ".npy"
             output_path = embs_dir / output_filename
+            
+            if output_path.exists():
+                print(f"Embeddings file already exists, skipping: {output_path}")
+                successful_processes += 1
+                continue
+            
+            embs = dreams_embeddings(str(hdf5_file))
             
             # Save embeddings
             np.save(output_path, embs)
             print(f"Saved embeddings to: {output_path}")
             print(f"Embeddings shape: {embs.shape}")
+            successful_processes += 1
             
         except Exception as e:
             print(f"Error processing {hdf5_file}: {str(e)}")
+            failed_processes += 1
+            
+            # Log the full error details for debugging
+            import traceback
+            print(f"Full error traceback:")
+            traceback.print_exc()
             continue
     
-    print(f"\nProcessing complete! Embeddings saved to: {embs_dir}")
+    print(f"\nProcessing complete!")
+    print(f"  Successfully processed: {successful_processes}")
+    print(f"  Failed to process: {failed_processes}")
+    print(f"  Invalid files skipped: {len(invalid_files)}")
+    print(f"Embeddings saved to: {embs_dir}")
 
 
 def main():
