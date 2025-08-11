@@ -93,10 +93,6 @@ def validate_dreams_model():
     except Exception as e:
         return False, f"Model validation failed: {str(e)}"
 
-
-def validate_hdf5_file(file_path):
-
-
 def process_batch_directory(batch_dir_path):
     """
     Process all HDF5 files in a batch directory and generate embeddings.
