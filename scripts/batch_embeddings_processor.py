@@ -58,40 +58,40 @@ def validate_hdf5_file(file_path):
         return False, f"HDF5 validation failed: {str(e)}"
 
 
-def validate_dreams_model():
-    """
-    Validate that the DreaMS model checkpoints are available and not corrupted.
+# def validate_dreams_model():
+#     """
+#     Validate that the DreaMS model checkpoints are available and not corrupted.
     
-    Returns:
-        tuple: (is_valid, error_message)
-    """
-    try:
-        # Try to load the model by calling dreams_embeddings with a dummy path
-        # This will trigger the model loading and validation
-        # We expect this to fail due to invalid file path, but not due to corrupted model
+#     Returns:
+#         tuple: (is_valid, error_message)
+#     """
+#     try:
+#         # Try to load the model by calling dreams_embeddings with a dummy path
+#         # This will trigger the model loading and validation
+#         # We expect this to fail due to invalid file path, but not due to corrupted model
         
-        # First, let's check if we can import and access the model loading functions
-        from dreams.api import PreTrainedModel
-        from dreams.definitions import DREAMS_EMBEDDING
+#         # First, let's check if we can import and access the model loading functions
+#         from dreams.api import PreTrainedModel
+#         from dreams.definitions import DREAMS_EMBEDDING
         
-        # Try to initialize the model checkpoint path
-        model_ckpt = DREAMS_EMBEDDING
+#         # Try to initialize the model checkpoint path
+#         model_ckpt = DREAMS_EMBEDDING
         
-        # Check if the checkpoint file exists
-        if not os.path.exists(model_ckpt):
-            return False, f"Model checkpoint not found: {model_ckpt}"
+#         # Check if the checkpoint file exists
+#         if not os.path.exists(model_ckpt):
+#             return False, f"Model checkpoint not found: {model_ckpt}"
         
-        # Try to load the checkpoint file to validate it's not corrupted
-        try:
-            torch.load(model_ckpt, map_location='cpu')
-            return True, "Model checkpoint valid"
-        except Exception as e:
-            return False, f"Model checkpoint corrupted: {str(e)}"
+#         # Try to load the checkpoint file to validate it's not corrupted
+#         try:
+#             torch.load(model_ckpt, map_location='cpu')
+#             return True, "Model checkpoint valid"
+#         except Exception as e:
+#             return False, f"Model checkpoint corrupted: {str(e)}"
             
-    except ImportError as e:
-        return False, f"DreaMS import error: {str(e)}"
-    except Exception as e:
-        return False, f"Model validation failed: {str(e)}"
+#     except ImportError as e:
+#         return False, f"DreaMS import error: {str(e)}"
+#     except Exception as e:
+#         return False, f"Model validation failed: {str(e)}"
 
 def process_batch_directory(batch_dir_path):
     """
@@ -119,11 +119,11 @@ def process_batch_directory(batch_dir_path):
     print(f"Embeddings will be saved to: {embs_dir}")
     
     # Validate DreaMS model first
-    print("\nValidating DreaMS model...")
-    model_valid, model_error = validate_dreams_model()
-    if not model_valid:
-        raise RuntimeError(f"DreaMS model validation failed: {model_error}")
-    print("DreaMS model validation passed!")
+    # print("\nValidating DreaMS model...")
+    # model_valid, model_error = validate_dreams_model()
+    # if not model_valid:
+    #     raise RuntimeError(f"DreaMS model validation failed: {model_error}")
+    # print("DreaMS model validation passed!")
     
     # Find all HDF5 files in the batch directory (recursively)
     hdf5_files = list(batch_dir.rglob("*.hdf5"))
