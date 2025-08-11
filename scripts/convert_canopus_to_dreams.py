@@ -19,9 +19,9 @@ import os
 # Add MIST to path for data loading utilities
 sys.path.append(str(Path(__file__).parent.parent / "mist" / "src"))
 
-from mist.src.mist.data.datasets import get_paired_spectra
-from mist.src.mist.data.featurizers import FingerprintFeaturizer
-from mist.src.mist import utils
+from mist.data.datasets import get_paired_spectra
+from mist.data.featurizers import FingerprintFeaturizer
+from mist import utils
 
 def load_canopus_data(canopus_dir):
     """Load CANOPUS data using MIST utilities."""
