@@ -1,0 +1,51 @@
+# First, set up environment variables
+$(python -c "from dreams.definitions import export; export()")
+
+# Download the CANOPUS dataset first:
+# mkdir -p data/paired_spectra/
+# cd data/paired_spectra/
+# wget -O canopus_train_export.tar "https://zenodo.org/record/8316682/files/canopus_train_export_v2.tar"
+# tar -xvf canopus_train_export.tar
+# mv canopus_train_export canopus_train
+# rm -f canopus_train_export.tar
+# cd ../../
+
+# Then run the fine-tuning (you may need to convert the MIST format to DreaMS HDF5 format first)
+# Fine-tuning DreaMS for Morgan 4096 molecular fingerprints
+# Using CANOPUS benchmark dataset (8,000 spectra from 7,000 unique molecules)
+
+# 1. Download CANOPUS benchmark dataset from MIST repository
+# Dataset available at: https://zenodo.org/records/8015962
+wget -O canopus_benchmark.zip "https://zenodo.org/records/8015962/files/canopus_train.zip?download=1"
+unzip canopus_benchmark.zip
+
+# 2. Convert MIST format to DreaMS HDF5 format
+python3 ../../convert_canopus_to_dreams.py canopus_train canopus_train_dreams.hdf5
+
+# 3. Activate conda environment with DreaMS dependencies
+conda activate dreams_env
+
+# 4. Fine-tuning command for Morgan 4096 fingerprints
+python3 train.py 
+    --dataset_pth ../../canopus_train_dreams.hdf5 
+    --train_regime fine-tuning 
+    --train_objective fp_morgan_4096 
+    --head_type FingerprintHead 
+    --lr 1e-4 
+    --lr_schedule cosine 
+    --warmup_steps 1000 
+    --batch_size 32 
+    --max_epochs 50 
+    --val_frac 0.2 
+    --patience 10 
+    --grad_clip_val 1.0 
+    --weight_decay 1e-5 
+    --optimizer AdamW 
+    --precision 16-mixed 
+    --num_workers_data 4 
+    --exp_name morgan4096_fine_tune 
+    --dformat default 
+    --loss mse 
+    --accelerator gpu 
+    --devices 1
+
