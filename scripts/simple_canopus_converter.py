@@ -182,21 +182,35 @@ def create_dreams_hdf5_simple(spectra_data, mol_data, output_path):
             mz_array = np.array([p[0] for p in peaks], dtype=np.float32)
             intensity_array = np.array([p[1] for p in peaks], dtype=np.float32)
             
-            # Take top peaks by intensity
-            if len(peaks) > max_peaks:
-                top_indices = np.argpartition(intensity_array, -max_peaks)[-max_peaks:]
-                mz_array = mz_array[top_indices]
-                intensity_array = intensity_array[top_indices]
+            # Filter out zero intensities and invalid values
+            valid_mask = (intensity_array > 0) & np.isfinite(intensity_array) & np.isfinite(mz_array) & (mz_array > 0)
+            mz_array = mz_array[valid_mask]
+            intensity_array = intensity_array[valid_mask]
             
-            # Sort by m/z
-            sort_indices = np.argsort(mz_array)
-            mz_array = mz_array[sort_indices]
-            intensity_array = intensity_array[sort_indices]
-            
-            # Fill spectrum array
-            n_peaks = len(mz_array)
-            spectrum_array[i, 0, :n_peaks] = mz_array
-            spectrum_array[i, 1, :n_peaks] = intensity_array
+            if len(mz_array) > 0:  # Check if we still have valid peaks
+                # Take top peaks by intensity
+                if len(mz_array) > max_peaks:
+                    top_indices = np.argpartition(intensity_array, -max_peaks)[-max_peaks:]
+                    mz_array = mz_array[top_indices]
+                    intensity_array = intensity_array[top_indices]
+                
+                # Sort by m/z
+                sort_indices = np.argsort(mz_array)
+                mz_array = mz_array[sort_indices]
+                intensity_array = intensity_array[sort_indices]
+                
+                # Fill spectrum array
+                n_peaks = len(mz_array)
+                spectrum_array[i, 0, :n_peaks] = mz_array
+                spectrum_array[i, 1, :n_peaks] = intensity_array
+            else:
+                # No valid peaks - create a minimal valid spectrum
+                spectrum_array[i, 0, 0] = 100.0  # Dummy m/z
+                spectrum_array[i, 1, 0] = 1.0    # Dummy intensity
+        else:
+            # No peaks - create a minimal valid spectrum
+            spectrum_array[i, 0, 0] = 100.0  # Dummy m/z
+            spectrum_array[i, 1, 0] = 1.0    # Dummy intensity
         
         # Collect metadata
         precursor_mzs.append(spec.get('precursor_mz', 0.0) or 0.0)
