@@ -204,6 +204,12 @@ def create_dreams_hdf5(spectra_list, mol_list, output_path, include_fingerprints
     if include_fingerprints:
         fingerprints = compute_morgan_fingerprints(smiles_list)
     
+    # Create fold assignments for cross-validation (80% train, 20% val)
+    num_spectra = len(spectra_list)
+    fold_assignments = ['train'] * int(0.8 * num_spectra) + ['val'] * (num_spectra - int(0.8 * num_spectra))
+    np.random.seed(42)  # For reproducible splits
+    np.random.shuffle(fold_assignments)
+    
     # Create HDF5 file
     with h5py.File(output_path, 'w') as f:
         # Core DreaMS columns
@@ -212,6 +218,7 @@ def create_dreams_hdf5(spectra_list, mol_list, output_path, include_fingerprints
         f.create_dataset('charge', data=np.array(charges, dtype=np.int32), compression='gzip')
         f.create_dataset('adduct', data=[s.encode('utf-8') for s in adducts], compression='gzip')
         f.create_dataset('smiles', data=[s.encode('utf-8') for s in smiles_list], compression='gzip')
+        f.create_dataset('fold', data=[s.encode('utf-8') for s in fold_assignments], compression='gzip')
         
         # Add Morgan fingerprints for fine-tuning
         if fingerprints is not None:
@@ -224,6 +231,7 @@ def create_dreams_hdf5(spectra_list, mol_list, output_path, include_fingerprints
         f.attrs['converted_from'] = 'MIST'
         
         print(f"Successfully created HDF5 file with {len(spectra_list)} spectra")
+        print(f"Fold distribution: {pd.Series(fold_assignments).value_counts().to_dict()}")
         print(f"Columns: {list(f.keys())}")
 
 def main():
