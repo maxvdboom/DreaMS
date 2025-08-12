@@ -32,10 +32,30 @@ def load_canopus_data(canopus_dir):
     if not labels_file.exists():
         raise FileNotFoundError(f"Labels file not found: {labels_file}")
     
-    # Find spectra directory
-    spec_dir = canopus_dir / "spec"
-    if not spec_dir.exists():
-        spec_dir = canopus_dir  # Sometimes spectra are in the root directory
+    # Find spectra directory - try multiple possible locations
+    spec_dirs_to_try = [
+        canopus_dir / "spec",
+        canopus_dir / "spectra", 
+        canopus_dir,
+        canopus_dir / "ms"
+    ]
+    
+    spec_dir = None
+    for potential_dir in spec_dirs_to_try:
+        if potential_dir.exists():
+            # Check if it contains .ms files
+            ms_files = list(potential_dir.glob("*.ms"))
+            if ms_files:
+                spec_dir = potential_dir
+                print(f"Found {len(ms_files)} .ms files in {spec_dir}")
+                break
+    
+    if spec_dir is None:
+        # List all files to help debug
+        print(f"Directory contents of {canopus_dir}:")
+        for item in canopus_dir.iterdir():
+            print(f"  {item.name} ({'dir' if item.is_dir() else 'file'})")
+        raise FileNotFoundError(f"No .ms files found in any expected directory under {canopus_dir}")
     
     print(f"Loading CANOPUS data from {canopus_dir}")
     print(f"Labels file: {labels_file}")
@@ -47,6 +67,11 @@ def load_canopus_data(canopus_dir):
         spec_folder=str(spec_dir),
         prog_bars=True
     )
+    
+    print(f"Loaded {len(spectra_list)} spectra and {len(mol_list)} molecules")
+    
+    if len(spectra_list) == 0:
+        raise ValueError("No spectra were loaded. Check that the dataset format is correct.")
     
     return spectra_list, mol_list
 
@@ -75,43 +100,56 @@ def convert_spectrum_format(spectrum_data):
     # MIST stores spectra as lists of [mz, intensity] pairs
     # DreaMS expects shape (num_spectra, 2, num_peaks) with padding
     
+    if len(spectrum_data) == 0:
+        print("Warning: No spectra to convert")
+        return np.array([]).reshape(0, 2, 512)  # Return empty array with correct shape
+    
     max_peaks = 512  # Standard for DreaMS
     converted_spectra = []
     
     for spec in tqdm(spectrum_data, desc="Converting spectra"):
-        if hasattr(spec, 'peaks') and spec.peaks is not None:
-            peaks = spec.peaks
-            if len(peaks) > 0:
-                # Extract m/z and intensity arrays
-                mz_array = np.array([p[0] for p in peaks], dtype=np.float32)
-                intensity_array = np.array([p[1] for p in peaks], dtype=np.float32)
-                
-                # Take top max_peaks by intensity
-                if len(peaks) > max_peaks:
-                    top_indices = np.argpartition(intensity_array, -max_peaks)[-max_peaks:]
-                    mz_array = mz_array[top_indices]
-                    intensity_array = intensity_array[top_indices]
-                
-                # Sort by m/z
-                sort_indices = np.argsort(mz_array)
-                mz_array = mz_array[sort_indices]
-                intensity_array = intensity_array[sort_indices]
-                
-                # Pad to max_peaks
-                if len(mz_array) < max_peaks:
-                    pad_length = max_peaks - len(mz_array)
-                    mz_array = np.pad(mz_array, (0, pad_length), mode='constant', constant_values=0)
-                    intensity_array = np.pad(intensity_array, (0, pad_length), mode='constant', constant_values=0)
-                
-                # Stack as (2, max_peaks) - first row m/z, second row intensity
-                spectrum_matrix = np.stack([mz_array, intensity_array], axis=0)
-                converted_spectra.append(spectrum_matrix)
+        try:
+            if hasattr(spec, 'peaks') and spec.peaks is not None:
+                peaks = spec.peaks
+                if len(peaks) > 0:
+                    # Extract m/z and intensity arrays
+                    mz_array = np.array([p[0] for p in peaks], dtype=np.float32)
+                    intensity_array = np.array([p[1] for p in peaks], dtype=np.float32)
+                    
+                    # Take top max_peaks by intensity
+                    if len(peaks) > max_peaks:
+                        top_indices = np.argpartition(intensity_array, -max_peaks)[-max_peaks:]
+                        mz_array = mz_array[top_indices]
+                        intensity_array = intensity_array[top_indices]
+                    
+                    # Sort by m/z
+                    sort_indices = np.argsort(mz_array)
+                    mz_array = mz_array[sort_indices]
+                    intensity_array = intensity_array[sort_indices]
+                    
+                    # Pad to max_peaks
+                    if len(mz_array) < max_peaks:
+                        pad_length = max_peaks - len(mz_array)
+                        mz_array = np.pad(mz_array, (0, pad_length), mode='constant', constant_values=0)
+                        intensity_array = np.pad(intensity_array, (0, pad_length), mode='constant', constant_values=0)
+                    
+                    # Stack as (2, max_peaks) - first row m/z, second row intensity
+                    spectrum_matrix = np.stack([mz_array, intensity_array], axis=0)
+                    converted_spectra.append(spectrum_matrix)
+                else:
+                    # Empty spectrum
+                    converted_spectra.append(np.zeros((2, max_peaks), dtype=np.float32))
             else:
-                # Empty spectrum
+                # No spectrum data
                 converted_spectra.append(np.zeros((2, max_peaks), dtype=np.float32))
-        else:
-            # No spectrum data
+        except Exception as e:
+            print(f"Error converting spectrum: {e}")
+            # Add empty spectrum as fallback
             converted_spectra.append(np.zeros((2, max_peaks), dtype=np.float32))
+    
+    if len(converted_spectra) == 0:
+        print("Warning: No valid spectra after conversion")
+        return np.array([]).reshape(0, 2, max_peaks)
     
     return np.array(converted_spectra)
 
@@ -153,6 +191,13 @@ def create_dreams_hdf5(spectra_list, mol_list, output_path, include_fingerprints
     # Convert spectra to DreaMS format
     spectrum_data = convert_spectrum_format(spectra_list)
     
+    # Validate spectrum data
+    if len(spectrum_data) == 0:
+        raise ValueError("No valid spectra found after conversion")
+    
+    print(f"Converted {len(spectrum_data)} spectra to DreaMS format")
+    print(f"Spectrum shape: {spectrum_data.shape}")
+    
     # Compute Morgan fingerprints if requested
     fingerprints = None
     if include_fingerprints:
@@ -174,7 +219,7 @@ def create_dreams_hdf5(spectra_list, mol_list, output_path, include_fingerprints
         # Add metadata
         f.attrs['dataset'] = 'CANOPUS'
         f.attrs['num_spectra'] = len(spectra_list)
-        f.attrs['max_peaks'] = spectrum_data.shape[2]
+        f.attrs['max_peaks'] = spectrum_data.shape[2] if len(spectrum_data.shape) >= 3 else 512
         f.attrs['converted_from'] = 'MIST'
         
         print(f"Successfully created HDF5 file with {len(spectra_list)} spectra")

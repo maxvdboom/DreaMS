@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 # Add DreaMS to path
-dreams_path = Path(__file__).parent / "DreaMS"
+dreams_path = Path(__file__).parent.parent  # Go up to DreaMS root
 sys.path.append(str(dreams_path))
 
 try:
@@ -20,7 +20,8 @@ try:
     print("Successfully imported DreaMS modules")
 except ImportError as e:
     print(f"Failed to import DreaMS modules: {e}")
-    print("Make sure you're running this from the correct directory")
+    print(f"Tried to import from: {dreams_path}")
+    print("Make sure you're running this from the DreaMS/scripts directory")
     sys.exit(1)
 
 def test_hdf5_file(hdf5_path):
