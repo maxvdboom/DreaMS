@@ -34,6 +34,7 @@ def load_canopus_data(canopus_dir):
     
     # Find spectra directory - try multiple possible locations
     spec_dirs_to_try = [
+        canopus_dir / "spec_files",  # Most common for CANOPUS
         canopus_dir / "spec",
         canopus_dir / "spectra", 
         canopus_dir,
