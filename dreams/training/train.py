@@ -25,9 +25,47 @@ import torch
 torch.set_printoptions(profile='full')
 torch.set_float32_matmul_precision('high')
 
+# Import memory optimization utilities  
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+try:
+    from memory_optimized_train import MemoryOptimizedCallback, get_memory_optimized_args
+except ImportError:
+    # Fallback - define minimal versions inline
+    import gc
+    from pytorch_lightning.callbacks import Callback
+    
+    class MemoryOptimizedCallback(Callback):
+        def __init__(self, clear_cache_every_n_steps=50):
+            self.clear_cache_every_n_steps = clear_cache_every_n_steps
+            self.step_count = 0
+        
+        def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+            self.step_count += 1
+            if self.step_count % self.clear_cache_every_n_steps == 0:
+                torch.cuda.empty_cache()
+                gc.collect()
+        
+        def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
+            torch.cuda.empty_cache()
+        
+        def on_validation_epoch_end(self, trainer, pl_module):
+            torch.cuda.empty_cache()
+            gc.collect()
+    
+    def get_memory_optimized_args(original_args):
+        original_args.batch_size = max(1, original_args.batch_size // 2)
+        original_args.num_workers_data = min(4, original_args.num_workers_data)
+        original_args.val_check_interval = 0.25
+        return original_args
+
 
 def main(args):
 
+    # Apply memory optimizations
+    args = get_memory_optimized_args(args)
+    
     # Prepare seeds and auxiliary variables
     seed_everything(args.seed)
     run_dir = Path(args.project_name) / args.job_key
@@ -73,7 +111,8 @@ def main(args):
             )
     elif args.train_regime in {'fine-tuning', 'cv-fine-tuning'}:
         if args.dataset_pth.suffix == '.hdf5':
-            msdata = du.MSData(args.dataset_pth, in_mem=True)
+            # Use in_mem=False for memory efficiency
+            msdata = du.MSData(args.dataset_pth, in_mem=False)
             dataset = msdata.to_torch_dataset(
                 spec_preproc=spec_preproc,
                 label=args.train_objective,
@@ -208,7 +247,7 @@ def main(args):
                                         lr=args.lr, weight_decay=args.weight_decay, dropout=args.dropout,
                                         retrieval_val_pth=args.retrieval_val_pth, batch_size=args.batch_size,
                                         unfreeze_backbone_at_epoch=args.unfreeze_backbone_at_epoch,
-                                        store_val_out_dir=run_dir / f'val_out_{args.dataset_pth.stem}',
+                                        store_val_out_dir=None,  # Disable to save memory
                                         head_depth=args.head_depth, head_phi_depth=args.head_phi_depth)
             # TODO: refactor backbone
             if args.train_objective in {'num_C', 'num_O'}:
@@ -250,7 +289,8 @@ def main(args):
             pl.callbacks.ModelCheckpoint(
                 monitor='Train loss', save_top_k=args.save_top_k, mode='min',
                 dirpath=run_dir, save_last=True, every_n_train_steps=1000
-            )
+            ),
+            MemoryOptimizedCallback(clear_cache_every_n_steps=25)
         ]
 
         if args.train_regime == 'pre-training':
