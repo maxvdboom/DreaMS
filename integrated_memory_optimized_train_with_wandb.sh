@@ -11,8 +11,8 @@
 # Option 2: Use offline mode if you have connection issues
 # export WANDB_MODE=offline
 
-# Option 3: Use your personal WandB entity
-export WANDB_ENTITY="m-van-den-boom"
+# Option 3: Use your team WandB entity
+export WANDB_ENTITY="SSL_MAC"
 
 # ========================================
 # IMPORTANT: Set your API key here!
@@ -32,7 +32,7 @@ python3 dreams/training/train.py \
  --project_name MorganFingerprints \
  --job_key "morgan_4096_fine_tune_wandb" \
  --run_name "morgan_4096_fine_tune_wandb_$(date +%Y%m%d_%H%M%S)" \
- --wandb_entity_name "${WANDB_ENTITY:-m-van-den-boom}" \
+ --wandb_entity_name "${WANDB_ENTITY:-SSL_MAC}" \
  --train_objective fp_morgan_4096 \
  --train_regime fine-tuning \
  --dataset_pth "./data/paired_spectra/canopus_train_dreams.hdf5" \
