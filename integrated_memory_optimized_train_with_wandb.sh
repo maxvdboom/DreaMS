@@ -5,7 +5,7 @@
 # Uncomment and modify as needed:
 
 # Option 1: Use your personal WandB entity (recommended)
-# export WANDB_ENTITY="your_username"
+export WANDB_ENTITY="m-van-den-boom"
 
 # Option 2: Use offline mode if you have connection issues
 # export WANDB_MODE=offline
@@ -13,8 +13,8 @@
 # Option 3: Set API key directly (not recommended for security)
 # export WANDB_API_KEY="your_api_key_here"
 
-# Option 4: Use existing team entity
-export WANDB_ENTITY="mass-spec-ml"
+# Option 4: Use existing team entity (only if you have access)
+# export WANDB_ENTITY="mass-spec-ml"
 
 # First, set up environment variables
 $(python -c "from dreams.definitions import export; export()")
@@ -22,8 +22,10 @@ $(python -c "from dreams.definitions import export; export()")
 # Check WandB status
 echo "Checking WandB configuration..."
 if command -v wandb &> /dev/null; then
-    if wandb whoami &> /dev/null; then
-        echo "✓ WandB is configured and logged in as: $(wandb whoami)"
+    # Check if logged in by trying to get the username
+    WANDB_USER=$(wandb whoami 2>/dev/null)
+    if [ $? -eq 0 ] && [ ! -z "$WANDB_USER" ]; then
+        echo "✓ WandB is configured and logged in as: $WANDB_USER"
     else
         echo "⚠ WandB is installed but not logged in. Please run:"
         echo "  wandb login"
@@ -41,7 +43,7 @@ python3 dreams/training/train.py \
  --project_name MorganFingerprints \
  --job_key "morgan_4096_fine_tune_wandb" \
  --run_name "morgan_4096_fine_tune_wandb_$(date +%Y%m%d_%H%M%S)" \
- --wandb_entity_name "${WANDB_ENTITY:-mass-spec-ml}" \
+ --wandb_entity_name "${WANDB_ENTITY:-m-van-den-boom}" \
  --train_objective fp_morgan_4096 \
  --train_regime fine-tuning \
  --dataset_pth "./data/paired_spectra/canopus_train_dreams.hdf5" \
