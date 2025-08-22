@@ -2,36 +2,57 @@
 # Enhanced memory-optimized fine-tuning script with WandB support
 
 # WandB Configuration Options
-# Uncomment and modify as needed:
+# Choose ONE of the following options:
 
-# Option 1: Use your personal WandB entity (recommended)
-export WANDB_ENTITY="m-van-den-boom"
+# Option 1: Set your API key directly (RECOMMENDED for cluster use)
+# Get your API key from: https://wandb.ai/authorize
+# export WANDB_API_KEY="your_api_key_here"
 
 # Option 2: Use offline mode if you have connection issues
 # export WANDB_MODE=offline
 
-# Option 3: Set API key directly (not recommended for security)
-# export WANDB_API_KEY="your_api_key_here"
+# Option 3: Use your personal WandB entity
+export WANDB_ENTITY="m-van-den-boom"
 
-# Option 4: Use existing team entity (only if you have access)
-# export WANDB_ENTITY="mass-spec-ml"
+# ========================================
+# IMPORTANT: Set your API key here!
+# Replace with your actual API key from https://wandb.ai/authorize
+# ========================================
+export WANDB_API_KEY="122c488a229c45237791eb8cb419d1bc2ecc577a"
+
+# Uncomment the line below if you want to use offline mode instead
+# export WANDB_MODE=offline
 
 # First, set up environment variables
 $(python -c "from dreams.definitions import export; export()")
 
 # Check WandB status
 echo "Checking WandB configuration..."
+
+if [ "$WANDB_MODE" = "offline" ]; then
+    echo "✓ WandB set to offline mode"
+elif [ ! -z "$WANDB_API_KEY" ] && [ "$WANDB_API_KEY" != "REPLACE_WITH_YOUR_API_KEY" ]; then
+    echo "✓ WandB API key is set"
+else
+    echo "⚠ WandB configuration incomplete!"
+    echo ""
+    echo "Please choose ONE of the following options:"
+    echo ""
+    echo "Option 1: Set your API key in the script"
+    echo "  1. Get your API key from: https://wandb.ai/authorize"
+    echo "  2. Replace 'REPLACE_WITH_YOUR_API_KEY' in this script with your actual API key"
+    echo ""
+    echo "Option 2: Use offline mode"
+    echo "  Uncomment the line: export WANDB_MODE=offline"
+    echo ""
+    echo "Option 3: Set environment variable before running"
+    echo "  export WANDB_API_KEY=your_api_key_here"
+    echo "  bash integrated_memory_optimized_train_with_wandb.sh"
+    echo ""
+fi
+
 if command -v wandb &> /dev/null; then
-    # Check if logged in by trying to get the username
-    WANDB_USER=$(wandb whoami 2>/dev/null)
-    if [ $? -eq 0 ] && [ ! -z "$WANDB_USER" ]; then
-        echo "✓ WandB is configured and logged in as: $WANDB_USER"
-    else
-        echo "⚠ WandB is installed but not logged in. Please run:"
-        echo "  wandb login"
-        echo "  Or set WANDB_API_KEY environment variable"
-        echo "  Or use WANDB_MODE=offline for offline logging"
-    fi
+    echo "✓ WandB package is installed"
 else
     echo "⚠ WandB not found. Installing..."
     pip install wandb
