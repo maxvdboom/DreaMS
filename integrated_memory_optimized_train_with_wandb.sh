@@ -26,38 +26,6 @@ export WANDB_API_KEY="122c488a229c45237791eb8cb419d1bc2ecc577a"
 # First, set up environment variables
 $(python -c "from dreams.definitions import export; export()")
 
-# Check WandB status
-echo "Checking WandB configuration..."
-
-if [ "$WANDB_MODE" = "offline" ]; then
-    echo "✓ WandB set to offline mode"
-elif [ ! -z "$WANDB_API_KEY" ] && [ "$WANDB_API_KEY" != "REPLACE_WITH_YOUR_API_KEY" ]; then
-    echo "✓ WandB API key is set"
-else
-    echo "⚠ WandB configuration incomplete!"
-    echo ""
-    echo "Please choose ONE of the following options:"
-    echo ""
-    echo "Option 1: Set your API key in the script"
-    echo "  1. Get your API key from: https://wandb.ai/authorize"
-    echo "  2. Replace 'REPLACE_WITH_YOUR_API_KEY' in this script with your actual API key"
-    echo ""
-    echo "Option 2: Use offline mode"
-    echo "  Uncomment the line: export WANDB_MODE=offline"
-    echo ""
-    echo "Option 3: Set environment variable before running"
-    echo "  export WANDB_API_KEY=your_api_key_here"
-    echo "  bash integrated_memory_optimized_train_with_wandb.sh"
-    echo ""
-fi
-
-if command -v wandb &> /dev/null; then
-    echo "✓ WandB package is installed"
-else
-    echo "⚠ WandB not found. Installing..."
-    pip install wandb
-fi
-
 # Run the memory-optimized fine-tuning with WandB enabled
 echo "Starting memory-optimized fine-tuning with WandB logging..."
 python3 dreams/training/train.py \
