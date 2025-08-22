@@ -7,7 +7,6 @@ $(python -c "from dreams.definitions import export; export()")
 # Run the memory-optimized fine-tuning
 echo "Starting memory-optimized fine-tuning with integrated optimizations..."
 python3 dreams/training/train.py \
- --no_wandb \
  --project_name MorganFingerprints \
  --job_key "morgan_4096_fine_tune_integrated" \
  --run_name "morgan_4096_fine_tune_integrated" \
