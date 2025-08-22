@@ -40,7 +40,7 @@ python3 dreams/training/train.py \
  --model DreaMS \
  --num_workers_data 4 \
  --lr 1e-4 \
- --batch_size 6 \
+ --batch_size 2 \
  --prec_intens 1.1 \
  --num_devices 2 \
  --max_epochs 100 \
