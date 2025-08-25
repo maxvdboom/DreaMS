@@ -31,6 +31,13 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 try:
     from memory_optimized_train import MemoryOptimizedCallback, get_memory_optimized_args
+    try:
+        from extreme_memory_optimization import ExtremeMemoryOptimizedCallback, get_extreme_memory_args, setup_extreme_memory_environment
+    except ImportError:
+        ExtremeMemoryOptimizedCallback = MemoryOptimizedCallback
+        get_extreme_memory_args = get_memory_optimized_args
+        def setup_extreme_memory_environment():
+            pass
 except ImportError:
     # Fallback - define minimal versions inline
     import gc
@@ -59,9 +66,20 @@ except ImportError:
         original_args.num_workers_data = min(4, original_args.num_workers_data)
         original_args.val_check_interval = 0.25
         return original_args
+    
+    ExtremeMemoryOptimizedCallback = MemoryOptimizedCallback
+    get_extreme_memory_args = get_memory_optimized_args
+    def setup_extreme_memory_environment():
+        pass
 
 
 def main(args):
+
+    # Setup extreme memory optimization environment if available
+    try:
+        setup_extreme_memory_environment()
+    except:
+        pass
 
     # Apply memory optimizations
     args = get_memory_optimized_args(args)
@@ -319,13 +337,18 @@ def main(args):
         strategy = pl.strategies.DDPStrategy(
             find_unused_parameters=False if args.train_regime == 'pre-training' else True
         ) if not cv else None
+        
+        # Get gradient accumulation steps if available
+        accumulate_grad_batches = getattr(args, 'accumulate_grad_batches', 1)
+        
         trainer = pl.Trainer(
             strategy=strategy, max_epochs=args.max_epochs, logger=wandb_logger if not args.no_wandb else None,
             accelerator=device, devices=args.num_devices, log_every_n_steps=args.log_every_n_steps,
             precision=args.train_precision, overfit_batches=args.overfit_batches, callbacks=callbacks,
             num_sanity_val_steps=0, use_distributed_sampler=args.num_devices > 1,
             val_check_interval=None if args.no_val else args.val_check_interval,
-            limit_val_batches=0 if args.no_val else None
+            limit_val_batches=0 if args.no_val else None,
+            accumulate_grad_batches=accumulate_grad_batches
         )
 
         if not args.no_wandb and trainer.global_rank == 0:
