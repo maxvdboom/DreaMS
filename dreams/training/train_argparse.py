@@ -122,6 +122,7 @@ def parse_args():
     parser.add_argument('--save_top_k', type=int, default=1)
     parser.add_argument('--log_every_n_steps', type=int, default=10)
     parser.add_argument('--val_check_interval', type=float, default=1.)
+    parser.add_argument('--gradient_clip_val', type=float, default=None)
     parser.add_argument('--log_figs', action='store_true')
 
     # Infrastructure

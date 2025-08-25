@@ -15,6 +15,7 @@ warnings.filterwarnings('ignore', category=NumbaDeprecationWarning)  # Supress n
 import dreams.utils.data as du
 from dreams.utils.io import setup_logger
 import dreams.utils.io as io
+from dreams.definitions import FOLD
 from dreams.models.dreams.dreams import DreaMS
 # from dreams.models.vanilla_bert.bert import VanillaBERT
 from dreams.models.heads.heads import *
@@ -348,7 +349,8 @@ def main(args):
             num_sanity_val_steps=0, use_distributed_sampler=args.num_devices > 1,
             val_check_interval=None if args.no_val else args.val_check_interval,
             limit_val_batches=0 if args.no_val else None,
-            accumulate_grad_batches=accumulate_grad_batches
+            accumulate_grad_batches=accumulate_grad_batches,
+            gradient_clip_val=args.gradient_clip_val
         )
 
         if not args.no_wandb and trainer.global_rank == 0:
