@@ -17,7 +17,7 @@ torch.backends.cudnn.deterministic = True
 # Import DreaMS modules
 sys.path.append(str(Path(__file__).parent))
 from dreams.training.train_argparse import parse_args
-from memory_optimized_train import MemoryOptimizedCallback, get_memory_optimized_args
+from dreams.training.memory_optimized_train import MemoryOptimizedCallback, get_memory_optimized_args
 from memory_optimized_head import apply_memory_optimizations
 from gradient_accumulation import GradientAccumulationStrategy, create_memory_efficient_trainer
 
