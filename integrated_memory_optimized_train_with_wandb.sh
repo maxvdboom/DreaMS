@@ -40,10 +40,10 @@ python3 dreams/training/train.py \
  --model DreaMS \
  --num_workers_data 4 \
  --lr 1e-4 \
- --batch_size 1 \
+ --batch_size 4 \
  --prec_intens 1.1 \
  --num_devices 2 \
- --max_epochs 100 \
+ --max_epochs 50 \
  --log_every_n_steps 10 \
  --head_depth 1 \
  --seed 3407 \
