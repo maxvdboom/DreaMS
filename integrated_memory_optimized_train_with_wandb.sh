@@ -47,7 +47,7 @@ python3 dreams/training/train.py \
  --log_every_n_steps 10 \
  --head_depth 1 \
  --seed 3407 \
- --train_precision 24 \
+ --train_precision 32 \
  --pre_trained_pth "${PRETRAINED}/ssl_model.ckpt" \
  --val_check_interval 0.1 \
  --max_peaks_n 100 \
