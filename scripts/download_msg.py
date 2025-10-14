@@ -16,7 +16,9 @@ def download_complete_massspecgym(save_dir="../data/massspecgym_complete"):
     Download and save the complete MassSpecGym dataset
     """
     print("🚀 Starting download of complete MassSpecGym dataset...")
-    
+    repo_id = "roman-bushuiev/MassSpecGym"
+    dataset = load_dataset(repo_id)
+
     # Create directory
     os.makedirs(save_dir, exist_ok=True)
     
