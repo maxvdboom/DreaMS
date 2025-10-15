@@ -2,17 +2,18 @@
 """
 Batch Embeddings Processor
 
-This script processes HDF5 files in a batch directory, generates DreaMS embeddings,
-and saves them to an embeddings directory structure.
+This script processes HDF5 files in an input directory, generates DreaMS embeddings,
+and saves them to a specified output directory.
 
 Usage:
-    python batch_embeddings_processor.py /path/to/batch/directory
+    python batch_embeddings_processor.py /path/to/input/directory /path/to/output/directory
 
 The script will:
-1. Find all HDF5 files in the batch directory (recursively)
+1. Find all HDF5 files in the input directory (recursively)
 2. Generate embeddings using dreams_embeddings()
-3. Save embeddings to ../embs/{batch_directory_name}/ relative to the batch directory
+3. Save embeddings to the output directory
 4. Use the original HDF5 filename (with .npy extension) for the embeddings file
+5. Preserve directory structure from input to output
 """
 
 import os
@@ -93,30 +94,27 @@ def validate_hdf5_file(file_path):
 #     except Exception as e:
 #         return False, f"Model validation failed: {str(e)}"
 
-def process_batch_directory(batch_dir_path):
+def process_batch_directory(input_dir_path, output_dir_path):
     """
-    Process all HDF5 files in a batch directory and generate embeddings.
+    Process all HDF5 files in an input directory and generate embeddings.
     
     Args:
-        batch_dir_path (str or Path): Path to the batch directory containing HDF5 files
+        input_dir_path (str or Path): Path to the input directory containing HDF5 files
+        output_dir_path (str or Path): Path to the output directory for embeddings
     """
-    batch_dir = Path(batch_dir_path)
+    input_dir = Path(input_dir_path)
+    output_dir = Path(output_dir_path)
     
-    if not batch_dir.exists():
-        raise FileNotFoundError(f"Batch directory does not exist: {batch_dir}")
+    if not input_dir.exists():
+        raise FileNotFoundError(f"Input directory does not exist: {input_dir}")
     
-    if not batch_dir.is_dir():
-        raise ValueError(f"Path is not a directory: {batch_dir}")
+    if not input_dir.is_dir():
+        raise ValueError(f"Input path is not a directory: {input_dir}")
     
-    # Get batch directory name for the embeddings folder
-    batch_name = batch_dir.name
-    
-    # Create embeddings directory path (one level up from batch directory)
-    embs_dir = batch_dir.parent / "embs" / batch_name
-    
-    # Create embeddings directory if it doesn't exist
-    embs_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Embeddings will be saved to: {embs_dir}")
+    # Create output directory if it doesn't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Input directory: {input_dir}")
+    print(f"Output directory: {output_dir}")
     
     # Validate DreaMS model first
     # print("\nValidating DreaMS model...")
@@ -125,11 +123,11 @@ def process_batch_directory(batch_dir_path):
     #     raise RuntimeError(f"DreaMS model validation failed: {model_error}")
     # print("DreaMS model validation passed!")
     
-    # Find all HDF5 files in the batch directory (recursively)
-    hdf5_files = list(batch_dir.rglob("*.hdf5"))
+    # Find all HDF5 files in the input directory (recursively)
+    hdf5_files = list(input_dir.rglob("*.hdf5"))
     
     if not hdf5_files:
-        print(f"No HDF5 files found in {batch_dir}")
+        print(f"No HDF5 files found in {input_dir}")
         return
     
     print(f"Found {len(hdf5_files)} HDF5 files to process")
@@ -164,9 +162,13 @@ def process_batch_directory(batch_dir_path):
             # Generate embeddings
             print(f"\nProcessing: {hdf5_file.name}")
             
-            # Check if output file already exists
-            output_filename = hdf5_file.stem + ".npy"
-            output_path = embs_dir / output_filename
+            # Preserve directory structure from input to output
+            relative_path = hdf5_file.relative_to(input_dir)
+            output_filename = relative_path.stem + ".npy"
+            output_path = output_dir / relative_path.parent / output_filename
+            
+            # Create subdirectories if needed
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             
             if output_path.exists():
                 print(f"Embeddings file already exists, skipping: {output_path}")
@@ -195,21 +197,22 @@ def process_batch_directory(batch_dir_path):
     print(f"  Successfully processed: {successful_processes}")
     print(f"  Failed to process: {failed_processes}")
     print(f"  Invalid files skipped: {len(invalid_files)}")
-    print(f"Embeddings saved to: {embs_dir}")
+    print(f"Embeddings saved to: {output_dir}")
 
 
 def main():
     """Main function to handle command line arguments."""
-    if len(sys.argv) != 2:
-        print("Usage: python batch_embeddings_processor.py /path/to/batch/directory")
+    if len(sys.argv) != 3:
+        print("Usage: python batch_embeddings_processor.py /path/to/input/directory /path/to/output/directory")
         print("\nExample:")
-        print("python batch_embeddings_processor.py /Users/maxvandenboom/Docs/Coding/AI/active/data/hypermarker/formatted/batch01")
+        print("python batch_embeddings_processor.py /Users/maxvandenboom/Docs/Coding/AI/active/data/hypermarker/formatted/batch01 /Users/maxvandenboom/Docs/Coding/AI/active/data/hypermarker/embeddings/batch01")
         sys.exit(1)
     
-    batch_directory = sys.argv[1]
+    input_directory = sys.argv[1]
+    output_directory = sys.argv[2]
     
     try:
-        process_batch_directory(batch_directory)
+        process_batch_directory(input_directory, output_directory)
     except Exception as e:
         print(f"Error: {str(e)}")
         sys.exit(1)
