@@ -1,0 +1,18 @@
+# Core data science
+pandas
+numpy
+scipy
+scikit-learn
+
+# Chemistry (already installed from dataset creation)
+rdkit
+map4
+
+# Visualization
+matplotlib
+seaborn
+umap-learn
+
+# Jupyter
+jupyter
+ipykernel
