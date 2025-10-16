@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import GroupShuffleSplit
 from typing import Tuple
+from pathlib import Path
 
 
 def create_scaffold_splits(
@@ -127,8 +128,11 @@ def fix_massspecgym_splits(input_path: str, output_path: str):
 
 
 if __name__ == "__main__":
+    # Get the dreams-thesis-wa directory (parent of src/)
+    THESIS_DIR = Path(__file__).parent.parent
+    
     # Fix the MassSpecGym splits
     fix_massspecgym_splits(
-        input_path="data/processed/MassSpecGym_enriched.tsv",
-        output_path="data/processed/MassSpecGym_scaffold_splits.tsv"
+        input_path=str(THESIS_DIR / "data/processed/MassSpecGym_enriched.tsv"),
+        output_path=str(THESIS_DIR / "data/processed/MassSpecGym_scaffold_splits.tsv")
     )
