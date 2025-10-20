@@ -16,3 +16,4 @@ umap-learn
 # Jupyter
 jupyter
 ipykernel
+uv 
