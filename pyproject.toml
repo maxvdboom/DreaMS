@@ -17,6 +17,7 @@ dependencies = [
     "matplotlib>=3.10.7",
     "molplotly>=1.1.7",
     "numpy>=2.2.6",
+    "pacmap>=0.8.0",
     "pandarallel>=1.6.5",
     "pandas>=2.3.3",
     "plotly>=6.3.1",
