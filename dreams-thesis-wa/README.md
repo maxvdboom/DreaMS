@@ -24,6 +24,7 @@ dreams-thesis-wa/
 │   └── raw/
 ├── results/                # Experimental results
 └── requirements.txt        # Python dependencies
+```
 
 ---
 
