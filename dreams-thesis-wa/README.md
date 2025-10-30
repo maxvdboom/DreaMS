@@ -24,20 +24,6 @@ dreams-thesis-wa/
 │   └── raw/
 ├── results/                # Experimental results
 └── requirements.txt        # Python dependencies
-```
-
-## Getting Started
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Generate embeddings
-python src/generate_ssl_embeddings.py
-
-# Run notebooks
-jupyter notebook
-```
 
 ---
 
