@@ -85,7 +85,8 @@ def calculate_descriptors(smiles):
 def add_descriptors_to_parquet(
     input_path: str,
     output_path: str = None,
-    columns_to_remove: list = None
+    columns_to_remove: list = None,
+    force_recalculate: bool = False
 ):
     """
     Add RDKit descriptors to parquet file.
@@ -94,16 +95,52 @@ def add_descriptors_to_parquet(
         input_path: Path to input parquet file
         output_path: Path to save output (if None, overwrites input)
         columns_to_remove: List of column names to remove (default: mol_weight, logp, subgroups)
+        force_recalculate: If True, recalculate descriptors even if they exist
     """
     
     if columns_to_remove is None:
-        columns_to_remove = ['mol_weight', 'logp', 'tpsa']  # Added tpsa since we're recalculating it
+        columns_to_remove = ['mol_weight', 'logp', 'alkene', 'aromatic', 'hydroxyl', 'ketone', 'carboxylic_acid', 'amine_primary', 'amide', 'ester', 'nitrile', 'halide', 'phosphate', 'thiol', 'nitro']
     
     print(f"Loading parquet file: {input_path}")
     df = pd.read_parquet(input_path)
     
     print(f"Original shape: {df.shape}")
     print(f"Original columns: {df.columns.tolist()}")
+    
+    # Check if descriptors already exist
+    expected_descriptors = ['alogp', 'hba', 'hbd', 'tpsa', 'n_rotatable_bonds', 
+                           'n_aromatic_rings', 'n_aliphatic_rings', 'fsp3', 'qed', 'sa_score']
+    existing_descriptors = [col for col in expected_descriptors if col in df.columns]
+    
+    if existing_descriptors and not force_recalculate:
+        print(f"\n✓ Descriptors already exist: {existing_descriptors}")
+        print("Skipping descriptor calculation. Use force_recalculate=True to override.")
+        
+        # Still remove unwanted columns if requested
+        columns_to_drop = [col for col in columns_to_remove if col in df.columns]
+        
+        # Remove any columns containing 'subgroup' (case-insensitive) or starting with 'has_'
+        for col in df.columns:
+            if col not in existing_descriptors and ('subgroup' in col.lower() or col.startswith('has_')):
+                if col not in columns_to_drop:
+                    columns_to_drop.append(col)
+        
+        if columns_to_drop:
+            print(f"\nRemoving columns: {columns_to_drop}")
+            df = df.drop(columns=columns_to_drop)
+            print(f"New shape: {df.shape}")
+            
+            # Save output
+            if output_path is None:
+                output_path = input_path
+            
+            print(f"\nSaving to: {output_path}")
+            df.to_parquet(output_path, index=False)
+            print("✅ Done!")
+        else:
+            print("\nNo columns to remove. File already in desired state.")
+        
+        return df
     
     # Remove old descriptors and subgroup columns
     columns_to_drop = []
@@ -166,6 +203,13 @@ def add_descriptors_to_parquet(
     
     # Add descriptors to dataframe
     descriptor_df = pd.DataFrame(descriptor_results)
+    
+    # Drop any existing descriptor columns that would be duplicated
+    existing_desc_cols = [col for col in descriptor_df.columns if col in df.columns]
+    if existing_desc_cols:
+        print(f"\nRemoving existing descriptor columns before re-adding: {existing_desc_cols}")
+        df = df.drop(columns=existing_desc_cols)
+    
     df = pd.concat([df, descriptor_df], axis=1)
     
     print(f"\nNew shape: {df.shape}")
@@ -176,10 +220,11 @@ def add_descriptors_to_parquet(
     print("\nDescriptor Statistics:")
     print("=" * 60)
     for col in descriptor_df.columns:
-        valid_count = df[col].notna().sum()
-        mean_val = df[col].mean()
-        std_val = df[col].std()
-        print(f"{col:20s}: mean={mean_val:8.3f}, std={std_val:8.3f}, valid={valid_count}/{len(df)}")
+        if col in df.columns:
+            valid_count = int(df[col].notna().sum())
+            mean_val = float(df[col].mean()) if df[col].notna().any() else np.nan
+            std_val = float(df[col].std()) if df[col].notna().any() else np.nan
+            print(f"{col:20s}: mean={mean_val:8.3f}, std={std_val:8.3f}, valid={valid_count}/{len(df)}")
     print("=" * 60)
     
     # Save output
