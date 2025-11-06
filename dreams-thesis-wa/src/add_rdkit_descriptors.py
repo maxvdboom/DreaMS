@@ -94,18 +94,25 @@ def add_descriptors_to_parquet(
     Args:
         input_path: Path to input parquet file
         output_path: Path to save output (if None, overwrites input)
-        columns_to_remove: List of column names to remove (default: mol_weight, logp, subgroups)
+        columns_to_remove: List of old/legacy column names to remove if present (default: mol_weight, logp, functional groups)
         force_recalculate: If True, recalculate descriptors even if they exist
     """
     
+    # Default: legacy columns that might exist in modified datasets
+    # (Safe to specify - will only remove if present)
     if columns_to_remove is None:
-        columns_to_remove = ['mol_weight', 'logp', 'alkene', 'aromatic', 'hydroxyl', 'ketone', 'carboxylic_acid', 'amine_primary', 'amide', 'ester', 'nitrile', 'halide', 'phosphate', 'thiol', 'nitro']
+        columns_to_remove = [
+            'mol_weight', 'logp', 'tpsa',  # Old descriptor names
+            'alkene', 'aromatic', 'hydroxyl', 'ketone', 'carboxylic_acid',  # Functional groups
+            'amine_primary', 'amide', 'ester', 'nitrile', 'halide', 
+            'phosphate', 'thiol', 'nitro'
+        ]
     
     print(f"Loading parquet file: {input_path}")
     df = pd.read_parquet(input_path)
     
     print(f"Original shape: {df.shape}")
-    print(f"Original columns: {df.columns.tolist()}")
+    print(f"Columns: {len(df.columns)}")
     
     # Check if descriptors already exist
     expected_descriptors = ['alogp', 'hba', 'hbd', 'tpsa', 'n_rotatable_bonds', 
@@ -116,17 +123,17 @@ def add_descriptors_to_parquet(
         print(f"\n✓ Descriptors already exist: {existing_descriptors}")
         print("Skipping descriptor calculation. Use force_recalculate=True to override.")
         
-        # Still remove unwanted columns if requested
+        # Clean up legacy columns if present (backwards compatibility)
         columns_to_drop = [col for col in columns_to_remove if col in df.columns]
         
-        # Remove any columns containing 'subgroup' (case-insensitive) or starting with 'has_'
+        # Also remove any 'subgroup' or 'has_' columns (legacy from old pipelines)
         for col in df.columns:
             if col not in existing_descriptors and ('subgroup' in col.lower() or col.startswith('has_')):
                 if col not in columns_to_drop:
                     columns_to_drop.append(col)
         
         if columns_to_drop:
-            print(f"\nRemoving columns: {columns_to_drop}")
+            print(f"\n⚠️  Removing legacy columns: {columns_to_drop}")
             df = df.drop(columns=columns_to_drop)
             print(f"New shape: {df.shape}")
             
@@ -138,24 +145,25 @@ def add_descriptors_to_parquet(
             df.to_parquet(output_path, index=False)
             print("✅ Done!")
         else:
-            print("\nNo columns to remove. File already in desired state.")
+            print("\n✅ No legacy columns found. Dataset is clean.")
         
         return df
     
-    # Remove old descriptors and subgroup columns
-    columns_to_drop = []
-    for col in columns_to_remove:
-        if col in df.columns:
-            columns_to_drop.append(col)
+    # Clean up legacy columns before adding new descriptors (backwards compatibility)
+    columns_to_drop = [col for col in columns_to_remove if col in df.columns]
     
-    # Remove any columns containing 'subgroup' (case-insensitive)
+    # Also remove any 'subgroup' or 'has_' columns (legacy from old pipelines)
     for col in df.columns:
         if 'subgroup' in col.lower() or col.startswith('has_'):
-            columns_to_drop.append(col)
+            if col not in columns_to_drop:
+                columns_to_drop.append(col)
     
     if columns_to_drop:
-        print(f"\nRemoving columns: {columns_to_drop}")
+        print(f"\n⚠️  Removing legacy columns: {columns_to_drop}")
         df = df.drop(columns=columns_to_drop)
+    else:
+        print("\n✓ No legacy columns found (fresh dataset)")
+
     
     # Calculate new descriptors
     print("\nCalculating RDKit descriptors...")

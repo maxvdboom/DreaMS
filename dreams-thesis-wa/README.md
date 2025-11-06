@@ -10,20 +10,57 @@ This repository contains experiments with **DreaMS** (Deep Representations for M
 
 ```
 dreams-thesis-wa/
-├── notebooks/              # Analysis and experimentation notebooks
-│   ├── compare_ssl_vs_contrastive_embeddings.ipynb
-│   └── dataset_creation.ipynb
-├── src/                    # Utility scripts
-│   ├── generate_ssl_embeddings.py
-│   ├── simple_probing.py
-│   ├── add_embeddings_to_tsv.py
-│   ├── convert_parquet_to_hdf5.py
-│   └── scaffold_splits.py
-├── data/                   # Data files (not tracked)
-│   ├── processed/
-│   └── raw/
+├── src/                    # Core data processing pipeline (⭐ START HERE)
+│   ├── README.md                          # 📖 Pipeline documentation
+│   ├── generate_ssl_embeddings.py         # Step 1: Generate SSL embeddings
+│   ├── add_rdkit_descriptors.py           # Step 2: Add molecular descriptors
+│   ├── murcko_histogram_splits.py         # Step 3: Create train/val/test splits
+│   ├── prepare_massbank_external_test.py  # Step 4: Prepare external validation
+│   └── compute_massbank_embeddings.py     # Step 5: External SSL embeddings
+│
+├── notebooks/              # Analysis notebooks
+│   ├── probe_ssl_embeddings.ipynb         # Main: Internal validation (probing)
+│   ├── external_validation_massbank.ipynb # Main: External validation
+│   └── exploratory/                       # Archived/exploratory notebooks
+│       └── dataset_creation.ipynb         # Reference only
+│
+├── data/                   # Data files (not tracked in git)
+│   ├── raw/                               # Original MassSpecGym.tsv
+│   ├── processed/                         # Processed parquet files with embeddings
+│   └── external/                          # MassBank EU external validation set
+│
 ├── results/                # Experimental results
+│   ├── probing_results_ssl.pkl
+│   └── external_validation_massbank.pkl
+│
+├── models/                 # Pre-trained model checkpoints
+│   └── ssl_model.ckpt
+│
 └── requirements.txt        # Python dependencies
+```
+
+## 🚀 Quick Start
+
+See detailed pipeline documentation in **[`src/README.md`](src/README.md)**
+
+**Run the full pipeline:**
+```bash
+# Step 1: Generate SSL embeddings (1024-dim from DreaMS model)
+python src/generate_ssl_embeddings.py
+
+# Step 2: Add 10 RDKit molecular descriptors
+python src/add_rdkit_descriptors.py
+
+# Step 3: Create rigorous Murcko histogram splits (train/val/test)
+python src/murcko_histogram_splits.py
+
+# Step 4-5 (Optional): Prepare external validation set (MassBank EU)
+python src/prepare_massbank_external_test.py
+python src/compute_massbank_embeddings.py
+
+# Step 6: Run analysis notebooks
+# - notebooks/probe_ssl_embeddings.ipynb (internal validation)
+# - notebooks/external_validation_massbank.ipynb (external validation)
 ```
 
 ---
