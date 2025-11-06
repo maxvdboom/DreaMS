@@ -2,7 +2,7 @@
 
 This directory contains the core data processing scripts for the DreaMS thesis project.
 
-## 📋 Main Pipeline (Run in Order)
+## Main Pipeline (Run in Order)
 
 ### 1. Generate SSL Embeddings
 **Script:** `generate_ssl_embeddings.py`
@@ -33,8 +33,8 @@ python src/add_rdkit_descriptors.py
 ```
 
 **What it does:**
-- ❌ Removes old descriptors: `mol_weight`, `logp`, functional groups (if present)
-- ✅ Adds 10 new RDKit descriptors:
+- Removes old descriptors: `mol_weight`, `logp`, functional groups (if present)
+- Adds 10 new RDKit descriptors:
   - `alogp`: Wildman-Crippen LogP (lipophilicity)
   - `hba`: Hydrogen Bond Acceptors
   - `hbd`: Hydrogen Bond Donors
@@ -84,7 +84,7 @@ python src/murcko_histogram_splits.py
 
 ---
 
-## 🧪 External Validation Pipeline
+## External Validation Pipeline
 
 ### 4. Prepare MassBank External Test Set
 **Script:** `prepare_massbank_external_test.py`
@@ -126,7 +126,7 @@ python src/compute_massbank_embeddings.py
 
 ---
 
-## 📊 Analysis Notebooks
+## Analysis Notebooks
 
 After running the pipeline scripts, use these notebooks for analysis:
 
@@ -148,7 +148,7 @@ After running the pipeline scripts, use these notebooks for analysis:
 
 ---
 
-## 🔧 Utility Scripts
+## Utility Scripts
 
 - **`scaffold_splits.py`**: Alternative splitting method (GroupShuffleSplit)
 - **`simple_probing.py`**: Standalone probing script
@@ -157,7 +157,7 @@ After running the pipeline scripts, use these notebooks for analysis:
 
 ---
 
-## 📁 Expected Data Structure
+## Expected Data Structure
 
 ```
 dreams-thesis-wa/
@@ -182,7 +182,7 @@ dreams-thesis-wa/
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 To run the full pipeline from scratch:
 
@@ -207,7 +207,7 @@ python src/compute_massbank_embeddings.py
 
 ---
 
-## 📝 Notes
+## Notes
 
 - **Murcko histogram splits are more rigorous** than simple scaffold splits
   - They prevent structurally *similar* molecules from leaking across folds
@@ -223,9 +223,3 @@ python src/compute_massbank_embeddings.py
   - Preserves data types (especially for embeddings as arrays)
 
 ---
-
-## ❓ Questions?
-
-- Check `EXTERNAL_VALIDATION_GUIDE.md` for detailed external validation workflow
-- Check `MEMORY_OPTIMIZATION_GUIDE.md` for training tips
-- See `notebooks/exploratory/` for dataset exploration examples

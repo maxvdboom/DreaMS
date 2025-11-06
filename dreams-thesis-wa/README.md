@@ -10,7 +10,7 @@ This repository contains experiments with **DreaMS** (Deep Representations for M
 
 ```
 dreams-thesis-wa/
-├── src/                    # Core data processing pipeline (⭐ START HERE)
+├── src/                    # Core data processing pipeline
 │   ├── README.md                          # 📖 Pipeline documentation
 │   ├── generate_ssl_embeddings.py         # Step 1: Generate SSL embeddings
 │   ├── add_rdkit_descriptors.py           # Step 2: Add molecular descriptors
@@ -39,7 +39,7 @@ dreams-thesis-wa/
 └── requirements.txt        # Python dependencies
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 See detailed pipeline documentation in **[`src/README.md`](src/README.md)**
 
