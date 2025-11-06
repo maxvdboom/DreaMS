@@ -31,7 +31,9 @@ dreams-thesis-wa/
 │
 ├── results/                # Experimental results
 │   ├── probing_results_ssl.pkl
-│   └── external_validation_massbank.pkl
+│
+├── figures/                # Created figures
+│   ├── ssl_embedding_baseline_linear_vs_mlp.png
 │
 ├── models/                 # Pre-trained model checkpoints
 │   └── ssl_model.ckpt
