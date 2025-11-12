@@ -65,7 +65,7 @@ DESCRIPTORS_PATH = Path('../data/processed/massspecgym_complete/all_rdkit_descri
 RESULTS_DIR = Path('../results')
 
 # Model parameters
-BATCH_SIZE = 4096  # Significantly increased to utilize GPU memory better
+BATCH_SIZE = 1024  # Significantly increased to utilize GPU memory better
 LEARNING_RATE = 0.001
 EPOCHS = 30
 DROPOUT = 0.2
