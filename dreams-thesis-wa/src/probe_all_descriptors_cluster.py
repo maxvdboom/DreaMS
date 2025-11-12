@@ -44,11 +44,10 @@ BATCH_SIZE = 1024  # Increased from 256 to use more GPU memory (4x larger)
 LEARNING_RATE = 0.001
 EPOCHS = 30
 DROPOUT = 0.2
-NUM_WORKERS_PER_GPU = 4  # Number of parallel workers per GPU
 
 # =============================================================================
 # Model Definitions
-# =============================================================================
+# ==============================gi===============================================
 
 class LinearProbe(nn.Module):
     """Simple linear regression probe: 1024→1"""
@@ -406,10 +405,9 @@ def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
         
         if len(devices) > 1:
             # Parallel processing across multiple GPUs
-            num_workers = len(devices) * NUM_WORKERS_PER_GPU
-            print(f"🚀 Using parallel processing with {len(devices)} devices and {num_workers} workers\n")
+            print(f"🚀 Using parallel processing with {len(devices)} devices\n")
             
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            with ThreadPoolExecutor(max_workers=len(devices)) as executor:
                 futures = {}
                 
                 for i, desc in enumerate(valid_descriptors):
@@ -466,10 +464,9 @@ def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
         
         if len(devices) > 1:
             # Parallel processing across multiple GPUs
-            num_workers = len(devices) * NUM_WORKERS_PER_GPU
-            print(f"🚀 Using parallel processing with {len(devices)} devices and {num_workers} workers\n")
+            print(f"🚀 Using parallel processing with {len(devices)} devices\n")
             
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            with ThreadPoolExecutor(max_workers=len(devices)) as executor:
                 futures = {}
                 
                 for i, desc in enumerate(valid_descriptors):
