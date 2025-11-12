@@ -223,6 +223,12 @@ def probe_all_descriptors(device='cuda:0', skip_linear=False, skip_mlp=False):
     
     # Merge descriptors with dataset
     print("Merging descriptors with dataset...")
+    # Drop any overlapping descriptor columns from the main dataset first
+    overlapping_cols = [col for col in valid_descriptors if col in df.columns and col != 'smiles']
+    if overlapping_cols:
+        print(f"  Dropping {len(overlapping_cols)} overlapping columns: {overlapping_cols[:5]}...")
+        df = df.drop(columns=overlapping_cols)
+    
     df_with_descriptors = df.merge(
         df_descriptors[['smiles'] + valid_descriptors],
         on='smiles',
