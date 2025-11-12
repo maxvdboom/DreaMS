@@ -28,6 +28,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import r2_score, mean_absolute_error
 from sklearn.preprocessing import StandardScaler
+import subprocess
 
 # =============================================================================
 # Configuration
@@ -166,6 +167,66 @@ def train_probe(X_train, y_train, X_test, y_test, model_type='mlp',
 
 
 # =============================================================================
+# GPU Detection Utility
+# =============================================================================
+
+def get_free_gpus(max_gpus=2, memory_threshold=1000):
+    """
+    Detect free GPUs based on memory usage.
+    
+    Args:
+        max_gpus: Maximum number of GPUs to return (default: 2)
+        memory_threshold: MB of memory used to consider GPU as "in use" (default: 1000 MB)
+    
+    Returns:
+        List of free GPU indices (e.g., [0, 1] or [2, 3])
+    """
+    try:
+        # Run nvidia-smi to get GPU memory usage
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=index,memory.used', '--format=csv,noheader,nounits'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        gpu_info = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                gpu_id, memory_used = line.split(',')
+                gpu_info.append({
+                    'id': int(gpu_id.strip()),
+                    'memory_used': float(memory_used.strip())
+                })
+        
+        # Sort by GPU ID and filter free GPUs
+        free_gpus = [
+            gpu['id'] for gpu in sorted(gpu_info, key=lambda x: x['id'])
+            if gpu['memory_used'] < memory_threshold
+        ]
+        
+        if not free_gpus:
+            print("⚠️  No free GPUs found! All GPUs are in use.")
+            return None
+        
+        # Return up to max_gpus sequential GPUs
+        selected_gpus = free_gpus[:max_gpus]
+        
+        print(f"🔍 GPU Status:")
+        for gpu in gpu_info:
+            status = "✅ FREE" if gpu['id'] in selected_gpus else f"❌ IN USE ({gpu['memory_used']:.0f} MB)"
+            selected = "← SELECTED" if gpu['id'] in selected_gpus else ""
+            print(f"   GPU {gpu['id']}: {status} {selected}")
+        
+        return selected_gpus
+        
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"⚠️  Could not detect GPUs: {e}")
+        print("   Falling back to manual detection...")
+        return None
+
+
+# =============================================================================
 # Main Probing Function
 # =============================================================================
 
@@ -215,15 +276,34 @@ def probe_single_descriptor(desc, df_train, df_test, X_train, X_test, model_type
         return None
 
 
-def probe_all_descriptors(devices=['cuda:0'], skip_linear=False, skip_mlp=False):
+def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
     """
     Main function to probe all descriptors.
     
     Args:
         devices: List of devices to use (e.g., ['cuda:0', 'cuda:1'] or ['cpu'])
+                 If None, automatically detect 2 free GPUs
         skip_linear: Skip linear probing if results exist
         skip_mlp: Skip MLP probing if results exist
     """
+    # Auto-detect free GPUs if not specified
+    if devices is None:
+        if torch.cuda.is_available():
+            free_gpu_ids = get_free_gpus(max_gpus=2)
+            
+            if free_gpu_ids:
+                devices = [f'cuda:{i}' for i in free_gpu_ids]
+                print(f"✅ Selected 2 free GPUs: {devices}\n")
+            else:
+                # Fallback: use all available GPUs (let user handle conflicts)
+                num_gpus = min(2, torch.cuda.device_count())  # Max 2 GPUs
+                devices = [f'cuda:{i}' for i in range(num_gpus)]
+                print(f"⚠️  Using first {num_gpus} GPU(s): {devices}")
+                print(f"   (Could not detect free GPUs automatically)\n")
+        else:
+            devices = ['cpu']
+            print("🔍 No GPUs detected, using CPU\n")
+    
     print("="*80)
     print("COMPREHENSIVE RDKIT DESCRIPTOR PROBING")
     print("="*80)
@@ -234,7 +314,7 @@ def probe_all_descriptors(devices=['cuda:0'], skip_linear=False, skip_mlp=False)
     print(f"Epochs: {EPOCHS}")
     print("="*80 + "\n")
     
-    # Check if GPUs are available
+    # Validate devices
     available_devices = []
     for device in devices:
         if device.startswith('cuda') and not torch.cuda.is_available():
@@ -474,14 +554,19 @@ if __name__ == "__main__":
     parser.add_argument(
         '--device', 
         type=str, 
-        default='cuda:0',
-        help='Single device to use (cuda:0, cuda:1, or cpu)'
+        default=None,
+        help='Single device to use (cuda:0, cuda:1, or cpu). Overrides auto-detection.'
     )
     parser.add_argument(
         '--devices',
         type=str,
         default=None,
-        help='Multiple devices separated by comma (e.g., cuda:0,cuda:1) - overrides --device'
+        help='Multiple devices separated by comma (e.g., cuda:0,cuda:1). Overrides auto-detection.'
+    )
+    parser.add_argument(
+        '--check-gpus',
+        action='store_true',
+        help='Check GPU availability and exit (no training)'
     )
     parser.add_argument(
         '--skip-linear',
@@ -496,11 +581,31 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Parse devices
+    # Check GPUs only
+    if args.check_gpus:
+        print("="*80)
+        print("GPU AVAILABILITY CHECK")
+        print("="*80)
+        if torch.cuda.is_available():
+            free_gpus = get_free_gpus(max_gpus=2)
+            if free_gpus:
+                print(f"\n✅ Recommended: Use GPUs {free_gpus}")
+                print(f"   Command: CUDA_VISIBLE_DEVICES=0,1 python {sys.argv[0]}")
+            else:
+                print(f"\n⚠️  All GPUs are currently in use.")
+                print(f"   Wait for GPUs to become available or use --devices to force specific GPUs.")
+        else:
+            print("\n❌ No CUDA GPUs available on this system")
+        print("="*80)
+        sys.exit(0)
+    
+    # Parse devices (with auto-detection as default)
     if args.devices:
         devices = [d.strip() for d in args.devices.split(',')]
-    else:
+    elif args.device:
         devices = [args.device]
+    else:
+        devices = None  # Will auto-detect in probe_all_descriptors()
     
     try:
         probe_all_descriptors(
