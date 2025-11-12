@@ -40,10 +40,11 @@ DESCRIPTORS_PATH = Path('../data/processed/massspecgym_complete/all_rdkit_descri
 RESULTS_DIR = Path('../results')
 
 # Model parameters
-BATCH_SIZE = 256
+BATCH_SIZE = 2048  # Increased from 256 to use more GPU memory (8x larger)
 LEARNING_RATE = 0.001
 EPOCHS = 30
 DROPOUT = 0.2
+NUM_WORKERS_PER_GPU = 4  # Number of parallel workers per GPU
 
 # =============================================================================
 # Model Definitions
@@ -405,9 +406,10 @@ def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
         
         if len(devices) > 1:
             # Parallel processing across multiple GPUs
-            print(f"🚀 Using parallel processing with {len(devices)} devices\n")
+            num_workers = len(devices) * NUM_WORKERS_PER_GPU
+            print(f"🚀 Using parallel processing with {len(devices)} devices and {num_workers} workers\n")
             
-            with ThreadPoolExecutor(max_workers=len(devices)) as executor:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 futures = {}
                 
                 for i, desc in enumerate(valid_descriptors):
@@ -464,9 +466,10 @@ def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
         
         if len(devices) > 1:
             # Parallel processing across multiple GPUs
-            print(f"🚀 Using parallel processing with {len(devices)} devices\n")
+            num_workers = len(devices) * NUM_WORKERS_PER_GPU
+            print(f"🚀 Using parallel processing with {len(devices)} devices and {num_workers} workers\n")
             
-            with ThreadPoolExecutor(max_workers=len(devices)) as executor:
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 futures = {}
                 
                 for i, desc in enumerate(valid_descriptors):
