@@ -5,6 +5,7 @@ This script trains both Linear and MLP probes for ~200 descriptors.
 
 Usage:
     python probe_all_descriptors_cluster.py --device cuda:0
+    python probe_all_descriptors_cluster.py --devices cuda:0,cuda:1  # Use multiple GPUs
 
 Outputs:
     - results/all_descriptors_probing_results_linear.pkl
@@ -20,6 +21,7 @@ from tqdm import tqdm
 import pickle
 from datetime import datetime
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import torch
 import torch.nn as nn
@@ -167,12 +169,58 @@ def train_probe(X_train, y_train, X_test, y_test, model_type='mlp',
 # Main Probing Function
 # =============================================================================
 
-def probe_all_descriptors(device='cuda:0', skip_linear=False, skip_mlp=False):
+def probe_single_descriptor(desc, df_train, df_test, X_train, X_test, model_type, device):
+    """
+    Probe a single descriptor on a specific device.
+    
+    Returns:
+        dict with results or None if failed
+    """
+    # Get targets (drop NaN)
+    train_mask = df_train[desc].notna()
+    test_mask = df_test[desc].notna()
+    
+    if train_mask.sum() < 100 or test_mask.sum() < 100:
+        return None
+    
+    y_train = df_train[train_mask][desc].values
+    y_test = df_test[test_mask][desc].values
+    X_train_clean = X_train[train_mask]
+    X_test_clean = X_test[test_mask]
+    
+    try:
+        result = train_probe(
+            X_train_clean, y_train,
+            X_test_clean, y_test,
+            model_type=model_type,
+            epochs=EPOCHS,
+            lr=LEARNING_RATE,
+            device=device,
+            verbose=False
+        )
+        
+        return {
+            'descriptor': desc,
+            'r2': result['r2'],
+            'mae': result['mae'],
+            'n_train': len(y_train),
+            'n_test': len(y_test),
+            'train_mean': y_train.mean(),
+            'train_std': y_train.std(),
+            'test_mean': y_test.mean(),
+            'test_std': y_test.std()
+        }
+    except Exception as e:
+        print(f"\n⚠️  Failed on {desc}: {e}")
+        return None
+
+
+def probe_all_descriptors(devices=['cuda:0'], skip_linear=False, skip_mlp=False):
     """
     Main function to probe all descriptors.
     
     Args:
-        device: Device to use ('cuda:0', 'cuda:1', 'cpu')
+        devices: List of devices to use (e.g., ['cuda:0', 'cuda:1'] or ['cpu'])
         skip_linear: Skip linear probing if results exist
         skip_mlp: Skip MLP probing if results exist
     """
@@ -180,16 +228,22 @@ def probe_all_descriptors(device='cuda:0', skip_linear=False, skip_mlp=False):
     print("COMPREHENSIVE RDKIT DESCRIPTOR PROBING")
     print("="*80)
     print(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Device: {device}")
+    print(f"Devices: {devices} ({len(devices)} device(s))")
     print(f"Batch size: {BATCH_SIZE}")
     print(f"Learning rate: {LEARNING_RATE}")
     print(f"Epochs: {EPOCHS}")
     print("="*80 + "\n")
     
-    # Check if GPU is available
-    if device.startswith('cuda') and not torch.cuda.is_available():
-        print("⚠️  CUDA not available, falling back to CPU")
-        device = 'cpu'
+    # Check if GPUs are available
+    available_devices = []
+    for device in devices:
+        if device.startswith('cuda') and not torch.cuda.is_available():
+            print(f"⚠️  CUDA not available for {device}, falling back to CPU")
+            available_devices.append('cpu')
+        else:
+            available_devices.append(device)
+    
+    devices = available_devices
     
     # Create results directory
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -263,50 +317,41 @@ def probe_all_descriptors(device='cuda:0', skip_linear=False, skip_mlp=False):
         print("LINEAR PROBE")
         print("="*80)
         print(f"Descriptors: {len(valid_descriptors)}")
-        print(f"Estimated time: ~30-60 minutes")
+        print(f"Devices: {devices}")
+        print(f"Estimated time: ~30-60 minutes (with {len(devices)} GPU(s))")
         print("="*80 + "\n")
         
         all_results_linear = []
         
-        for i, desc in enumerate(tqdm(valid_descriptors, desc="Linear probing"), 1):
-            # Get targets (drop NaN)
-            train_mask = df_train[desc].notna()
-            test_mask = df_test[desc].notna()
+        if len(devices) > 1:
+            # Parallel processing across multiple GPUs
+            print(f"🚀 Using parallel processing with {len(devices)} devices\n")
             
-            if train_mask.sum() < 100 or test_mask.sum() < 100:
-                continue
-            
-            y_train = df_train[train_mask][desc].values
-            y_test = df_test[test_mask][desc].values
-            X_train_clean = X_train[train_mask]
-            X_test_clean = X_test[test_mask]
-            
-            try:
-                result = train_probe(
-                    X_train_clean, y_train,
-                    X_test_clean, y_test,
-                    model_type='linear',
-                    epochs=EPOCHS,
-                    lr=LEARNING_RATE,
-                    device=device,
-                    verbose=False
+            with ThreadPoolExecutor(max_workers=len(devices)) as executor:
+                futures = {}
+                
+                for i, desc in enumerate(valid_descriptors):
+                    # Round-robin device assignment
+                    device = devices[i % len(devices)]
+                    future = executor.submit(
+                        probe_single_descriptor,
+                        desc, df_train, df_test, X_train, X_test, 'linear', device
+                    )
+                    futures[future] = desc
+                
+                # Collect results with progress bar
+                for future in tqdm(as_completed(futures), total=len(futures), desc="Linear probing"):
+                    result = future.result()
+                    if result is not None:
+                        all_results_linear.append(result)
+        else:
+            # Sequential processing (single device)
+            for desc in tqdm(valid_descriptors, desc="Linear probing"):
+                result = probe_single_descriptor(
+                    desc, df_train, df_test, X_train, X_test, 'linear', devices[0]
                 )
-                
-                all_results_linear.append({
-                    'descriptor': desc,
-                    'r2': result['r2'],
-                    'mae': result['mae'],
-                    'n_train': len(y_train),
-                    'n_test': len(y_test),
-                    'train_mean': y_train.mean(),
-                    'train_std': y_train.std(),
-                    'test_mean': y_test.mean(),
-                    'test_std': y_test.std()
-                })
-                
-            except Exception as e:
-                print(f"\n⚠️  Failed on {desc}: {e}")
-                continue
+                if result is not None:
+                    all_results_linear.append(result)
         
         # Save Linear results
         with open(results_cache_linear, 'wb') as f:
@@ -331,50 +376,41 @@ def probe_all_descriptors(device='cuda:0', skip_linear=False, skip_mlp=False):
         print("MLP PROBE")
         print("="*80)
         print(f"Descriptors: {len(valid_descriptors)}")
-        print(f"Estimated time: ~60-120 minutes")
+        print(f"Devices: {devices}")
+        print(f"Estimated time: ~60-120 minutes (with {len(devices)} GPU(s))")
         print("="*80 + "\n")
         
         all_results_mlp = []
         
-        for i, desc in enumerate(tqdm(valid_descriptors, desc="MLP probing"), 1):
-            # Get targets (drop NaN)
-            train_mask = df_train[desc].notna()
-            test_mask = df_test[desc].notna()
+        if len(devices) > 1:
+            # Parallel processing across multiple GPUs
+            print(f"🚀 Using parallel processing with {len(devices)} devices\n")
             
-            if train_mask.sum() < 100 or test_mask.sum() < 100:
-                continue
-            
-            y_train = df_train[train_mask][desc].values
-            y_test = df_test[test_mask][desc].values
-            X_train_clean = X_train[train_mask]
-            X_test_clean = X_test[test_mask]
-            
-            try:
-                result = train_probe(
-                    X_train_clean, y_train,
-                    X_test_clean, y_test,
-                    model_type='mlp',
-                    epochs=EPOCHS,
-                    lr=LEARNING_RATE,
-                    device=device,
-                    verbose=False
+            with ThreadPoolExecutor(max_workers=len(devices)) as executor:
+                futures = {}
+                
+                for i, desc in enumerate(valid_descriptors):
+                    # Round-robin device assignment
+                    device = devices[i % len(devices)]
+                    future = executor.submit(
+                        probe_single_descriptor,
+                        desc, df_train, df_test, X_train, X_test, 'mlp', device
+                    )
+                    futures[future] = desc
+                
+                # Collect results with progress bar
+                for future in tqdm(as_completed(futures), total=len(futures), desc="MLP probing"):
+                    result = future.result()
+                    if result is not None:
+                        all_results_mlp.append(result)
+        else:
+            # Sequential processing (single device)
+            for desc in tqdm(valid_descriptors, desc="MLP probing"):
+                result = probe_single_descriptor(
+                    desc, df_train, df_test, X_train, X_test, 'mlp', devices[0]
                 )
-                
-                all_results_mlp.append({
-                    'descriptor': desc,
-                    'r2': result['r2'],
-                    'mae': result['mae'],
-                    'n_train': len(y_train),
-                    'n_test': len(y_test),
-                    'train_mean': y_train.mean(),
-                    'train_std': y_train.std(),
-                    'test_mean': y_test.mean(),
-                    'test_std': y_test.std()
-                })
-                
-            except Exception as e:
-                print(f"\n⚠️  Failed on {desc}: {e}")
-                continue
+                if result is not None:
+                    all_results_mlp.append(result)
         
         # Save MLP results
         with open(results_cache_mlp, 'wb') as f:
@@ -407,7 +443,7 @@ def probe_all_descriptors(device='cuda:0', skip_linear=False, skip_mlp=False):
         f.write("COMPREHENSIVE RDKIT DESCRIPTOR PROBING - CLUSTER RUN SUMMARY\n")
         f.write("="*80 + "\n")
         f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"Device: {device}\n")
+        f.write(f"Devices: {devices} ({len(devices)} device(s))\n")
         f.write(f"Batch size: {BATCH_SIZE}\n")
         f.write(f"Learning rate: {LEARNING_RATE}\n")
         f.write(f"Epochs: {EPOCHS}\n")
@@ -439,7 +475,13 @@ if __name__ == "__main__":
         '--device', 
         type=str, 
         default='cuda:0',
-        help='Device to use (cuda:0, cuda:1, or cpu)'
+        help='Single device to use (cuda:0, cuda:1, or cpu)'
+    )
+    parser.add_argument(
+        '--devices',
+        type=str,
+        default=None,
+        help='Multiple devices separated by comma (e.g., cuda:0,cuda:1) - overrides --device'
     )
     parser.add_argument(
         '--skip-linear',
@@ -454,9 +496,15 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
+    # Parse devices
+    if args.devices:
+        devices = [d.strip() for d in args.devices.split(',')]
+    else:
+        devices = [args.device]
+    
     try:
         probe_all_descriptors(
-            device=args.device,
+            devices=devices,
             skip_linear=args.skip_linear,
             skip_mlp=args.skip_mlp
         )
