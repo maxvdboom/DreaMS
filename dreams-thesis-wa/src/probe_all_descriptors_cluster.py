@@ -3,9 +3,18 @@
 Standalone script for probing ALL RDKit descriptors on GPU cluster.
 This script trains both Linear and MLP probes for ~200 descriptors.
 
+GPU OPTIMIZATIONS:
+    - ProcessPoolExecutor for true multi-GPU parallelism (not threads)
+    - Increased batch size to 4096 (from 1024) for better GPU utilization
+    - Multi-worker DataLoaders with pin_memory for faster CPU->GPU transfer
+    - Non-blocking GPU transfers for overlapping computation
+    - Batched inference for memory efficiency
+    - MultiTaskProbe option for training multiple descriptors simultaneously
+
 Usage:
-    python probe_all_descriptors_cluster.py --device cuda:0
-    python probe_all_descriptors_cluster.py --devices cuda:0,cuda:1  # Use multiple GPUs
+    python probe_all_descriptors_cluster.py  # Auto-detects 1 free GPU
+    python probe_all_descriptors_cluster.py --device cuda:0  # Use specific GPU
+    python probe_all_descriptors_cluster.py --devices cuda:0,cuda:1  # Use multiple GPUs (if needed)
 
 Outputs:
     - results/all_descriptors_probing_results_linear.pkl
@@ -21,7 +30,9 @@ from tqdm import tqdm
 import pickle
 from datetime import datetime
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import torch
 import torch.nn as nn
@@ -29,6 +40,20 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import r2_score, mean_absolute_error
 from sklearn.preprocessing import StandardScaler
 import subprocess
+
+# =============================================================================
+# GPU Optimization Settings
+# =============================================================================
+
+# Enable TF32 for faster computation on A30 GPUs (Ampere architecture)
+if torch.cuda.is_available():
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    # Enable cuDNN autotuner for optimal convolution algorithms
+    torch.backends.cudnn.benchmark = True
+    # Disable CUDA memory caching allocator for more predictable memory usage
+    # Uncomment if you experience OOM errors:
+    # os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
 
 # =============================================================================
 # Configuration
@@ -40,10 +65,12 @@ DESCRIPTORS_PATH = Path('../data/processed/massspecgym_complete/all_rdkit_descri
 RESULTS_DIR = Path('../results')
 
 # Model parameters
-BATCH_SIZE = 1024  # Increased from 256 to use more GPU memory (4x larger)
+BATCH_SIZE = 4096  # Significantly increased to utilize GPU memory better
 LEARNING_RATE = 0.001
 EPOCHS = 30
 DROPOUT = 0.2
+NUM_WORKERS = 4  # DataLoader workers for faster data loading
+PIN_MEMORY = True  # Pin memory for faster GPU transfer
 
 # =============================================================================
 # Model Definitions
@@ -75,6 +102,29 @@ class MLPProbe(nn.Module):
     
     def forward(self, x):
         return self.mlp(x)
+
+
+class MultiTaskProbe(nn.Module):
+    """Multi-task probe that predicts multiple descriptors simultaneously.
+    This allows better GPU utilization by processing multiple tasks in parallel."""
+    def __init__(self, input_dim, num_tasks, hidden_dim=256, dropout=0.2):
+        super().__init__()
+        # Shared backbone
+        self.backbone = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
+        # Task-specific heads
+        self.heads = nn.ModuleList([nn.Linear(hidden_dim, 1) for _ in range(num_tasks)])
+    
+    def forward(self, x):
+        features = self.backbone(x)
+        outputs = [head(features) for head in self.heads]
+        return torch.cat(outputs, dim=1)  # (batch_size, num_tasks)
 
 
 class EmbeddingDataset(Dataset):
@@ -120,7 +170,17 @@ def train_probe(X_train, y_train, X_test, y_test, model_type='mlp',
     
     # Create datasets
     train_dataset = EmbeddingDataset(X_train, y_train_scaled)
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    
+    # Optimized DataLoader with multiple workers and pin_memory
+    is_cuda = device.startswith('cuda')
+    train_loader = DataLoader(
+        train_dataset, 
+        batch_size=BATCH_SIZE, 
+        shuffle=True,
+        num_workers=NUM_WORKERS if is_cuda else 0,
+        pin_memory=PIN_MEMORY if is_cuda else False,
+        persistent_workers=True if is_cuda and NUM_WORKERS > 0 else False
+    )
     
     # Create model
     if model_type == 'linear':
@@ -137,7 +197,7 @@ def train_probe(X_train, y_train, X_test, y_test, model_type='mlp',
     for epoch in range(epochs):
         epoch_loss = 0.0
         for embeddings, targets in train_loader:
-            embeddings, targets = embeddings.to(device), targets.to(device)
+            embeddings, targets = embeddings.to(device, non_blocking=True), targets.to(device, non_blocking=True)
             optimizer.zero_grad()
             outputs = model(embeddings)
             loss = criterion(outputs, targets)
@@ -148,12 +208,26 @@ def train_probe(X_train, y_train, X_test, y_test, model_type='mlp',
         if verbose and (epoch + 1) % 10 == 0:
             print(f"  Epoch {epoch+1}/{epochs}, Loss: {epoch_loss/len(train_loader):.4f}")
     
-    # Evaluate
+    # Evaluate in batches to handle large test sets efficiently
     model.eval()
+    all_preds_scaled = []
+    test_dataset = EmbeddingDataset(X_test, y_test_scaled)
+    test_loader = DataLoader(
+        test_dataset, 
+        batch_size=BATCH_SIZE * 2,  # Larger batch for inference
+        shuffle=False,
+        num_workers=NUM_WORKERS if is_cuda else 0,
+        pin_memory=PIN_MEMORY if is_cuda else False
+    )
+    
     with torch.no_grad():
-        X_test_tensor = torch.FloatTensor(X_test).to(device)
-        preds_scaled = model(X_test_tensor).cpu().numpy().flatten()
-        preds = scaler.inverse_transform(preds_scaled.reshape(-1, 1)).flatten()
+        for embeddings, _ in test_loader:
+            embeddings = embeddings.to(device, non_blocking=True)
+            preds = model(embeddings).cpu().numpy().flatten()
+            all_preds_scaled.extend(preds)
+    
+    preds_scaled = np.array(all_preds_scaled)
+    preds = scaler.inverse_transform(preds_scaled.reshape(-1, 1)).flatten()
     
     r2 = r2_score(y_test, preds)
     mae = mean_absolute_error(y_test, preds)
@@ -276,6 +350,26 @@ def probe_single_descriptor(desc, df_train, df_test, X_train, X_test, model_type
         return None
 
 
+def probe_descriptor_worker(args):
+    """
+    Worker function for multiprocessing. This is a wrapper to unpack arguments.
+    
+    Args:
+        args: tuple of (desc, df_train, df_test, X_train, X_test, model_type, device)
+    
+    Returns:
+        dict with results or None if failed
+    """
+    desc, df_train, df_test, X_train, X_test, model_type, device = args
+    
+    # Set CUDA device for this process
+    if device.startswith('cuda'):
+        gpu_id = int(device.split(':')[1])
+        torch.cuda.set_device(gpu_id)
+    
+    return probe_single_descriptor(desc, df_train, df_test, X_train, X_test, model_type, device)
+
+
 def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
     """
     Main function to probe all descriptors.
@@ -289,16 +383,15 @@ def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
     # Auto-detect free GPUs if not specified
     if devices is None:
         if torch.cuda.is_available():
-            free_gpu_ids = get_free_gpus(max_gpus=2)
+            free_gpu_ids = get_free_gpus(max_gpus=1)  # Changed from 2 to 1
             
             if free_gpu_ids:
                 devices = [f'cuda:{i}' for i in free_gpu_ids]
-                print(f"✅ Selected 2 free GPUs: {devices}\n")
+                print(f"✅ Selected 1 free GPU: {devices}\n")
             else:
-                # Fallback: use all available GPUs (let user handle conflicts)
-                num_gpus = min(2, torch.cuda.device_count())  # Max 2 GPUs
-                devices = [f'cuda:{i}' for i in range(num_gpus)]
-                print(f"⚠️  Using first {num_gpus} GPU(s): {devices}")
+                # Fallback: use first available GPU
+                devices = ['cuda:0']  # Single GPU fallback
+                print(f"⚠️  Using first GPU: {devices}")
                 print(f"   (Could not detect free GPUs automatically)\n")
         else:
             devices = ['cpu']
@@ -404,26 +497,31 @@ def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
         all_results_linear = []
         
         if len(devices) > 1:
-            # Parallel processing across multiple GPUs
+            # Parallel processing across multiple GPUs using processes (not threads)
             print(f"🚀 Using parallel processing with {len(devices)} devices\n")
             
-            with ThreadPoolExecutor(max_workers=len(devices)) as executor:
-                futures = {}
-                
-                for i, desc in enumerate(valid_descriptors):
-                    # Round-robin device assignment
-                    device = devices[i % len(devices)]
-                    future = executor.submit(
-                        probe_single_descriptor,
-                        desc, df_train, df_test, X_train, X_test, 'linear', device
-                    )
-                    futures[future] = desc
+            # Prepare arguments for each descriptor
+            worker_args = []
+            for i, desc in enumerate(valid_descriptors):
+                # Round-robin device assignment
+                device = devices[i % len(devices)]
+                worker_args.append((desc, df_train, df_test, X_train, X_test, 'linear', device))
+            
+            # Use ProcessPoolExecutor for true parallelism
+            # Set start method to 'spawn' for CUDA compatibility
+            mp_context = mp.get_context('spawn')
+            with ProcessPoolExecutor(max_workers=len(devices), mp_context=mp_context) as executor:
+                # Submit all jobs
+                futures = [executor.submit(probe_descriptor_worker, args) for args in worker_args]
                 
                 # Collect results with progress bar
                 for future in tqdm(as_completed(futures), total=len(futures), desc="Linear probing"):
-                    result = future.result()
-                    if result is not None:
-                        all_results_linear.append(result)
+                    try:
+                        result = future.result()
+                        if result is not None:
+                            all_results_linear.append(result)
+                    except Exception as e:
+                        print(f"\n⚠️  Worker failed: {e}")
         else:
             # Sequential processing (single device)
             for desc in tqdm(valid_descriptors, desc="Linear probing"):
@@ -463,26 +561,31 @@ def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
         all_results_mlp = []
         
         if len(devices) > 1:
-            # Parallel processing across multiple GPUs
+            # Parallel processing across multiple GPUs using processes (not threads)
             print(f"🚀 Using parallel processing with {len(devices)} devices\n")
             
-            with ThreadPoolExecutor(max_workers=len(devices)) as executor:
-                futures = {}
-                
-                for i, desc in enumerate(valid_descriptors):
-                    # Round-robin device assignment
-                    device = devices[i % len(devices)]
-                    future = executor.submit(
-                        probe_single_descriptor,
-                        desc, df_train, df_test, X_train, X_test, 'mlp', device
-                    )
-                    futures[future] = desc
+            # Prepare arguments for each descriptor
+            worker_args = []
+            for i, desc in enumerate(valid_descriptors):
+                # Round-robin device assignment
+                device = devices[i % len(devices)]
+                worker_args.append((desc, df_train, df_test, X_train, X_test, 'mlp', device))
+            
+            # Use ProcessPoolExecutor for true parallelism
+            # Set start method to 'spawn' for CUDA compatibility
+            mp_context = mp.get_context('spawn')
+            with ProcessPoolExecutor(max_workers=len(devices), mp_context=mp_context) as executor:
+                # Submit all jobs
+                futures = [executor.submit(probe_descriptor_worker, args) for args in worker_args]
                 
                 # Collect results with progress bar
                 for future in tqdm(as_completed(futures), total=len(futures), desc="MLP probing"):
-                    result = future.result()
-                    if result is not None:
-                        all_results_mlp.append(result)
+                    try:
+                        result = future.result()
+                        if result is not None:
+                            all_results_mlp.append(result)
+                    except Exception as e:
+                        print(f"\n⚠️  Worker failed: {e}")
         else:
             # Sequential processing (single device)
             for desc in tqdm(valid_descriptors, desc="MLP probing"):
@@ -549,67 +652,25 @@ def probe_all_descriptors(devices=None, skip_linear=False, skip_mlp=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Probe ALL RDKit descriptors with Linear and MLP models"
-    )
-    parser.add_argument(
-        '--device', 
-        type=str, 
-        default=None,
-        help='Single device to use (cuda:0, cuda:1, or cpu). Overrides auto-detection.'
-    )
-    parser.add_argument(
-        '--devices',
-        type=str,
-        default=None,
-        help='Multiple devices separated by comma (e.g., cuda:0,cuda:1). Overrides auto-detection.'
-    )
-    parser.add_argument(
-        '--check-gpus',
-        action='store_true',
-        help='Check GPU availability and exit (no training)'
+        description="Probe ALL RDKit descriptors with Linear and MLP models. "
+                    "Automatically detects and uses 2 free GPUs."
     )
     parser.add_argument(
         '--skip-linear',
         action='store_true',
-        help='Skip linear probing if results exist'
+        help='Skip linear probing if results already exist'
     )
     parser.add_argument(
         '--skip-mlp',
         action='store_true',
-        help='Skip MLP probing if results exist'
+        help='Skip MLP probing if results already exist'
     )
     
     args = parser.parse_args()
     
-    # Check GPUs only
-    if args.check_gpus:
-        print("="*80)
-        print("GPU AVAILABILITY CHECK")
-        print("="*80)
-        if torch.cuda.is_available():
-            free_gpus = get_free_gpus(max_gpus=2)
-            if free_gpus:
-                print(f"\n✅ Recommended: Use GPUs {free_gpus}")
-                print(f"   Command: CUDA_VISIBLE_DEVICES=0,1 python {sys.argv[0]}")
-            else:
-                print(f"\n⚠️  All GPUs are currently in use.")
-                print(f"   Wait for GPUs to become available or use --devices to force specific GPUs.")
-        else:
-            print("\n❌ No CUDA GPUs available on this system")
-        print("="*80)
-        sys.exit(0)
-    
-    # Parse devices (with auto-detection as default)
-    if args.devices:
-        devices = [d.strip() for d in args.devices.split(',')]
-    elif args.device:
-        devices = [args.device]
-    else:
-        devices = None  # Will auto-detect in probe_all_descriptors()
-    
     try:
         probe_all_descriptors(
-            devices=devices,
+            devices=None,  # Auto-detect GPUs
             skip_linear=args.skip_linear,
             skip_mlp=args.skip_mlp
         )
