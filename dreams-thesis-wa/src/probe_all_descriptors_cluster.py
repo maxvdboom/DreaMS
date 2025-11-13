@@ -69,7 +69,7 @@ BATCH_SIZE = 1024  # Significantly increased to utilize GPU memory better
 LEARNING_RATE = 0.001
 EPOCHS = 30
 DROPOUT = 0.2
-NUM_WORKERS = 4  # DataLoader workers for faster data loading
+NUM_WORKERS = 0  # Set to 0 to avoid "too many open files" error when training many descriptors
 PIN_MEMORY = True  # Pin memory for faster GPU transfer
 
 # =============================================================================
