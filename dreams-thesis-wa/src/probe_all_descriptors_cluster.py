@@ -69,8 +69,8 @@ BATCH_SIZE = 1024  # Significantly increased to utilize GPU memory better
 LEARNING_RATE = 0.001
 EPOCHS = 30
 DROPOUT = 0.2
-NUM_WORKERS_LINEAR = 4  # Linear probing is fast, can use multiple workers
-NUM_WORKERS_MLP = 0  # MLP is slower, use 0 to avoid "too many open files" error
+NUM_WORKERS_LINEAR = 0  # Set to 0 to avoid file handle issues with ProcessPoolExecutor
+NUM_WORKERS_MLP = 0  # Set to 0 to avoid file handle issues with ProcessPoolExecutor
 PIN_MEMORY = True  # Pin memory for faster GPU transfer
 
 # =============================================================================
