@@ -69,7 +69,8 @@ BATCH_SIZE = 1024  # Significantly increased to utilize GPU memory better
 LEARNING_RATE = 0.001
 EPOCHS = 30
 DROPOUT = 0.2
-NUM_WORKERS = 0  # Set to 0 to avoid "too many open files" error when training many descriptors
+NUM_WORKERS_LINEAR = 4  # Linear probing is fast, can use multiple workers
+NUM_WORKERS_MLP = 0  # MLP is slower, use 0 to avoid "too many open files" error
 PIN_MEMORY = True  # Pin memory for faster GPU transfer
 
 # =============================================================================
@@ -145,7 +146,7 @@ class EmbeddingDataset(Dataset):
 # =============================================================================
 
 def train_probe(X_train, y_train, X_test, y_test, model_type='mlp', 
-                epochs=30, lr=0.001, device='cuda:0', verbose=False):
+                epochs=30, lr=0.001, device='cuda:0', verbose=False, num_workers=0):
     """
     Train probe and evaluate.
     
@@ -159,6 +160,7 @@ def train_probe(X_train, y_train, X_test, y_test, model_type='mlp',
         lr: Learning rate
         device: 'cuda:0', 'cuda:1', or 'cpu'
         verbose: Print training progress
+        num_workers: Number of DataLoader workers (0 for MLP, 4 for Linear)
     
     Returns:
         dict with r2, mae, model, scaler
@@ -177,9 +179,9 @@ def train_probe(X_train, y_train, X_test, y_test, model_type='mlp',
         train_dataset, 
         batch_size=BATCH_SIZE, 
         shuffle=True,
-        num_workers=NUM_WORKERS if is_cuda else 0,
+        num_workers=num_workers if is_cuda else 0,
         pin_memory=PIN_MEMORY if is_cuda else False,
-        persistent_workers=True if is_cuda and NUM_WORKERS > 0 else False
+        persistent_workers=True if is_cuda and num_workers > 0 else False
     )
     
     # Create model
@@ -216,7 +218,7 @@ def train_probe(X_train, y_train, X_test, y_test, model_type='mlp',
         test_dataset, 
         batch_size=BATCH_SIZE * 2,  # Larger batch for inference
         shuffle=False,
-        num_workers=NUM_WORKERS if is_cuda else 0,
+        num_workers=num_workers if is_cuda else 0,
         pin_memory=PIN_MEMORY if is_cuda else False
     )
     
@@ -324,6 +326,9 @@ def probe_single_descriptor(desc, df_train, df_test, X_train, X_test, model_type
     X_test_clean = X_test[test_mask]
     
     try:
+        # Use appropriate num_workers based on model type
+        num_workers = NUM_WORKERS_LINEAR if model_type == 'linear' else NUM_WORKERS_MLP
+        
         result = train_probe(
             X_train_clean, y_train,
             X_test_clean, y_test,
@@ -331,7 +336,8 @@ def probe_single_descriptor(desc, df_train, df_test, X_train, X_test, model_type
             epochs=EPOCHS,
             lr=LEARNING_RATE,
             device=device,
-            verbose=False
+            verbose=False,
+            num_workers=num_workers
         )
         
         return {
