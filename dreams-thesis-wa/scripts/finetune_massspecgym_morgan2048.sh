@@ -76,14 +76,14 @@ python3 dreams/training/train.py \
  --model DreaMS \
  --num_workers_data 4 \
  --lr 1e-4 \
- --batch_size 32 \
+ --batch_size 64 \
  --prec_intens 1.1 \
  --num_devices 1 \
- --max_epochs 50 \
+ --max_epochs 100 \
  --log_every_n_steps 50 \
  --head_depth 2 \
  --seed 3407 \
- --train_precision 32 \
+ --train_precision 64 \
  --pre_trained_pth "${PRETRAINED}/ssl_model.ckpt" \
  --val_check_interval 0.25 \
  --max_peaks_n 128 \
