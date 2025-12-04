@@ -64,7 +64,7 @@ except ImportError:
     
     def get_memory_optimized_args(original_args):
         original_args.batch_size = max(1, original_args.batch_size // 2)
-        original_args.num_workers_data = min(4, original_args.num_workers_data)
+        original_args.num_workers_data = min(16, original_args.num_workers_data)  # Allow up to 16 workers
         original_args.val_check_interval = 0.25
         return original_args
     
