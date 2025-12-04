@@ -1,10 +1,25 @@
 import torch
 import argparse
+import sys
 from pathlib import PosixPath, WindowsPath
 
 # Fix for PyTorch 2.6+ checkpoint loading security changes
 # This allows loading checkpoints saved with older PyTorch versions
 torch.serialization.add_safe_globals([argparse.Namespace, PosixPath, WindowsPath])
+
+# Import and register DataFormat classes (needed for loading old checkpoints saved as 'msml')
+from dreams.utils.dformats import DataFormat, DataFormatA, DataFormatA1, DataFormatA2, DataFormatA3
+from dreams.utils import data as dreams_data
+torch.serialization.add_safe_globals([DataFormat, DataFormatA, DataFormatA1, DataFormatA2, DataFormatA3])
+torch.serialization.add_safe_globals([dreams_data.SpectrumPreprocessor])
+
+# Create module aliases for backward compatibility with checkpoints saved as 'msml'
+import dreams.utils.dformats
+import dreams.utils.data
+sys.modules['msml'] = sys.modules['dreams']
+sys.modules['msml.utils'] = sys.modules['dreams.utils']
+sys.modules['msml.utils.dformats'] = sys.modules['dreams.utils.dformats']
+sys.modules['msml.utils.data'] = sys.modules['dreams.utils.data']
 
 from torch import nn
 import torch.nn.functional as F
