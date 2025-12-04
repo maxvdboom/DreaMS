@@ -74,7 +74,7 @@ python3 dreams/training/train.py \
  --dataset_pth "$DATASET_PATH" \
  --dformat A \
  --model DreaMS \
- --num_workers_data 4 \
+ --num_workers_data 16 \
  --lr 1e-4 \
  --batch_size 64 \
  --prec_intens 1.1 \
