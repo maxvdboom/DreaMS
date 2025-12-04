@@ -1,7 +1,13 @@
+from __future__ import annotations
 import pandas as pd
 from enum import Enum, auto, unique
 import statistics as stats
 import numpy as np
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pyopenms as pyms
+
 try:
     import pyopenms as pyms
     PYOPENMS_AVAILABLE = True
