@@ -1,4 +1,18 @@
 import torch
+import sys
+
+# Create module aliases for backward compatibility with checkpoints saved as 'msml'
+# This maps old 'msml' imports to 'dreams' so old checkpoints can load
+import dreams
+import dreams.utils
+import dreams.utils.dformats
+import dreams.utils.data
+sys.modules['msml'] = dreams
+sys.modules['msml.utils'] = dreams.utils
+sys.modules['msml.utils.dformats'] = dreams.utils.dformats
+sys.modules['msml.utils.data'] = dreams.utils.data
+sys.modules['msml.utils.io'] = dreams.utils  # Redirect io imports
+
 from torch import nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
