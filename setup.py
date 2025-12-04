@@ -33,7 +33,7 @@ setup(
         "wandb==0.16.4",
         "pandarallel==1.6.5",
         "matchms==0.27.0",
-        "pyopenms==3.4.0",
+        # "pyopenms==3.4.0",  # Optional - not available on all platforms
         "igraph==0.11.4",
         "molplotly==1.1.7",
         "fire==0.6.0",
@@ -41,6 +41,9 @@ setup(
         "msml @ git+https://github.com/roman-bushuiev/msml_legacy_architectures.git@main"
     ],
     extras_require={
+        "pyopenms": [
+            "pyopenms==3.4.0",
+        ],
         "dev": [
             "black==24.4.2",
             "pytest==8.2.1",
