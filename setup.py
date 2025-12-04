@@ -38,11 +38,14 @@ setup(
         "molplotly==1.1.7",
         "fire==0.6.0",
         "huggingface_hub==0.24.5",
-        "msml @ git+https://github.com/roman-bushuiev/msml_legacy_architectures.git@main"
+        # "msml @ git+https://github.com/roman-bushuiev/msml_legacy_architectures.git@main"  # Optional - requires pyopenms
     ],
     extras_require={
         "pyopenms": [
             "pyopenms==3.4.0",
+        ],
+        "msml": [
+            "msml @ git+https://github.com/roman-bushuiev/msml_legacy_architectures.git@main",
         ],
         "dev": [
             "black==24.4.2",
