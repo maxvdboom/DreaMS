@@ -1,4 +1,10 @@
 import torch
+import argparse
+
+# Fix for PyTorch 2.6+ checkpoint loading security changes
+# This allows loading checkpoints saved with older PyTorch versions
+torch.serialization.add_safe_globals([argparse.Namespace])
+
 from torch import nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
