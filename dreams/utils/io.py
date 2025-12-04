@@ -35,7 +35,12 @@ from itertools import groupby
 from tqdm import tqdm
 import dreams.utils.spectra as su
 import dreams.utils.misc as utils
-import dreams.utils.lcms as lcms
+try:
+    import dreams.utils.lcms as lcms
+    LCMS_AVAILABLE = True
+except ImportError:
+    lcms = None
+    LCMS_AVAILABLE = False
 import dreams.utils.dformats as dformats
 from dreams.algorithms.lsh import BatchedPeakListRandomProjection
 from dreams.definitions import *

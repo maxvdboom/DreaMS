@@ -2,7 +2,12 @@ import pandas as pd
 from enum import Enum, auto, unique
 import statistics as stats
 import numpy as np
-import pyopenms as pyms
+try:
+    import pyopenms as pyms
+    PYOPENMS_AVAILABLE = True
+except ImportError:
+    pyms = None
+    PYOPENMS_AVAILABLE = False
 from collections import Counter
 import dreams.utils.spectra as su
 import dreams.utils.misc as utils
