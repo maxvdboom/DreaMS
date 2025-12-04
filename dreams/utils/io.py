@@ -10,14 +10,20 @@ import numpy as np
 import pandas as pd
 import rdkit.Chem as Chem
 import pyteomics
-import pyopenms as oms
+try:
+    import pyopenms as oms
+    import pyopenms as pyms
+    PYOPENMS_AVAILABLE = True
+except ImportError:
+    oms = None
+    pyms = None
+    PYOPENMS_AVAILABLE = False
 import matplotlib.pyplot as plt
 import urllib.parse as urlparse
 import contextlib
 import time
 import io as std_io
 import wandb
-import pyopenms as pyms
 import traceback
 from collections import Counter
 from functools import cache
@@ -405,6 +411,8 @@ def read_mgf(pth, **kwargs):
 
 
 def read_mzml(pth: Union[Path, str], verbose: bool = False, scan_range: Optional[Tuple[int, int]] = None):
+    if not PYOPENMS_AVAILABLE:
+        raise ImportError("pyopenms is required for reading mzML/mzXML files. Install it with: pip install pyopenms")
     if isinstance(pth, str):
         pth = Path(pth)
     exp = oms.MSExperiment()
@@ -558,6 +566,8 @@ def read_lcmsms(
         assign_dformats=True,
         verbose=False
     ):
+    if not PYOPENMS_AVAILABLE:
+        raise ImportError("pyopenms is required for reading LC-MS/MS files. Install it with: pip install pyopenms")
 
     logger.info(f'Started processing {input_path}')
 
