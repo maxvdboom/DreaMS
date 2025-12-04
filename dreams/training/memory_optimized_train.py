@@ -84,8 +84,8 @@ def get_memory_optimized_args(original_args):
     # Enable gradient checkpointing if available
     original_args.gradient_clip_val = 1.0
     
-    # Reduce number of workers to save CPU memory
-    original_args.num_workers_data = min(2, original_args.num_workers_data)
+    # Allow more workers for faster data loading (was capped to 2)
+    original_args.num_workers_data = min(16, original_args.num_workers_data)
     
     # Disable some memory-intensive features during training
     original_args.no_val = False  # Keep validation but make it more memory efficient
