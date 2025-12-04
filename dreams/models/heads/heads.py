@@ -1,34 +1,4 @@
 import torch
-import argparse
-import sys
-from pathlib import PosixPath, WindowsPath
-from functools import wraps
-
-# =============================================================================
-# Fix for PyTorch 2.6+ checkpoint loading with old 'msml' package checkpoints
-# =============================================================================
-
-# Create module aliases FIRST for backward compatibility with checkpoints saved as 'msml'
-import dreams.utils.dformats
-import dreams.utils.data
-sys.modules['msml'] = sys.modules['dreams']
-sys.modules['msml.utils'] = sys.modules['dreams.utils']
-sys.modules['msml.utils.dformats'] = sys.modules['dreams.utils.dformats']
-sys.modules['msml.utils.data'] = sys.modules['dreams.utils.data']
-
-# Monkey-patch torch.load to use weights_only=False for backward compatibility
-# This is needed because old checkpoints contain custom classes that PyTorch 2.6+ blocks by default
-_original_torch_load = torch.load
-
-@wraps(_original_torch_load)
-def _patched_torch_load(*args, **kwargs):
-    # Force weights_only=False if not explicitly set
-    if 'weights_only' not in kwargs:
-        kwargs['weights_only'] = False
-    return _original_torch_load(*args, **kwargs)
-
-torch.load = _patched_torch_load
-
 from torch import nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
@@ -87,12 +57,9 @@ class FineTuningHead(pl.LightningModule):
         self.save_hyperparameters()
 
         if isinstance(backbone, Path):
-            # Use weights_only=False for backward compatibility with checkpoints
-            # saved under the old 'msml' package name (PyTorch 2.6+ security change)
             self.backbone = backbone_cls.load_from_checkpoint(
                 backbone,
-                map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-                weights_only=False
+                map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             )
         else:
             self.backbone = backbone
