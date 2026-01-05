@@ -20,7 +20,7 @@ $(python -c "from dreams.definitions import export; export()")
 # Configuration
 PROJECT_NAME="MassSpecGym_Morgan2048"
 RUN_NAME="massspecgym_morgan2048_finetune_$(date +%Y%m%d_%H%M%S)"
-DATASET_PATH="./dreams-thesis-wa/data/processed/MassSpecGym_finetuning.hdf5"
+DATASET_PATH="./dreams-thesis-wa/data/processed/MassSpecGym_MurckoHist_split.hdf5"
 
 # WandB configuration
 # Credentials are stored in .wandb_secrets (gitignored)
@@ -97,6 +97,7 @@ python3 dreams/training/train.py \
  --num_devices 1 \
  --max_epochs 103 \
  --log_every_n_steps 5 \
+
  --head_depth 1 \
  --seed 3407 \
  --train_precision 64   \
