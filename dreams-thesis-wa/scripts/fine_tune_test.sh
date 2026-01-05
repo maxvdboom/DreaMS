@@ -1,19 +1,20 @@
 #!/bin/bash
-"""
-Fine-tuning script for MassSpecGym dataset with Morgan 2048 fingerprints.
+#SBATCH --job-name=DreaMS_fine-tuning
+#SBATCH --partition=gpu_h100
+#SBATCH --nodes=1
+#SBATCH --gpus=1
+#SBATCH --cpus-per-task=16
+#SBATCH --time=02:00:00
 
-This script fine-tunes a pre-trained DreaMS model on the MassSpecGym dataset
-to predict Morgan fingerprints (2048-bit).
+# Loaindg modules
+module load 2024
+module load Miniconda3/24.7.1-0
 
-Prerequisites:
-1. Run prepare_massspecgym_for_finetuning.py to create the HDF5 file
-2. Have a pre-trained DreaMS model checkpoint
+# Activate conda environment
+eval "$(conda shell.bash hook)"
+conda activate dreams
 
-Usage:
-    bash finetune_massspecgym_morgan2048.sh
-"""
-
-# Set up environment variables
+# Export project definitions
 $(python -c "from dreams.definitions import export; export()")
 
 # Configuration
@@ -50,7 +51,7 @@ if [ ! -f "${PRETRAINED}/ssl_model.ckpt" ]; then
     echo "Error: Pre-trained model not found at ${PRETRAINED}/ssl_model.ckpt"
     echo "Please set PRETRAINED environment variable to your pre-trained model directory"
     exit 1
-
+fi
 
 echo "=================================="
 echo "MassSpecGym Fine-Tuning"
@@ -75,7 +76,12 @@ else
 fi
 echo ""
 
-# Fine-tuning with Morgan 2048 fingerprints
+# Move to running dir
+cd "${DREAMS_DIR}" || exit 3
+
+# Run the training script
+# Replace `python3 training/train.py` with `srun --export=ALL --preserve-env python3 training/train.py \`
+# when executing on a SLURM cluster via `sbatch`.
 python3 dreams/training/train.py \
  $WANDB_ARGS \
  --job_key "$RUN_NAME" \
@@ -85,24 +91,44 @@ python3 dreams/training/train.py \
  --dataset_pth "$DATASET_PATH" \
  --dformat A \
  --model DreaMS \
- --num_workers_data 16 \
- --lr 1e-4 \
+ --lr 3e-5 \
  --batch_size 64 \
  --prec_intens 1.1 \
  --num_devices 1 \
- --max_epochs 100 \
- --log_every_n_steps 50 \
- --head_depth 2 \
+ --max_epochs 103 \
+ --log_every_n_steps 5 \
+ --head_depth 1 \
  --seed 3407 \
- --train_precision 64 \
+ --train_precision 64   \
  --pre_trained_pth "${PRETRAINED}/ssl_model.ckpt" \
- --val_check_interval 0.25 \
- --max_peaks_n 128 \
- --save_top_k 3 \
- --val_frac 0.1 \
- --weight_decay 1e-5
+ --val_check_interval 0.1 \
+ --max_peaks_n 100 \
+ --save_top_k -1
 
-echo ""
-echo "=================================="
-echo "Fine-tuning completed!"
-echo "=================================="
+# Contrastive fine-tuning
+# python3 training/train.py \
+#  --project_name CONTRASTIVE_FINE_TUNING \
+#  --job_key "lr5e-6_margin0.1_fixed_rel_intens_max_peaks_n100" \
+#  --run_name "lr5e-6_margin0.1_fixed_rel_intens_max_peaks_n100" \
+#  --train_objective contrastive_spec_embs \
+#  --train_regime fine-tuning \
+#  --dformat A \
+#  --model DreaMS \
+#  --lr 5e-6 \
+#  --batch_size 4 \
+#  --prec_intens 1.1 \
+#  --num_devices 8 \
+#  --max_epochs 301 \
+#  --log_every_n_steps 5 \
+#  --seed 3407 \
+#  --train_precision 32 \
+#  --val_check_interval 1.0 \
+#  --save_top_k -1 \
+#  --head_depth 0 \
+#  --unfreeze_backbone_at_epoch 0 \
+#  --dataset_pth "${MERGED_DATASETS}/MoNA_A_Murcko_split_neighbours_[M+H]+_0.05Da.pkl" \
+#  --pre_trained_pth "${PRETRAINED}/ssl_model.ckpt" \
+#  --n_pos_samples 1 \
+#  --n_neg_samples 1 \
+#  --triplet_loss_margin 0.1 \
+#  --max_peaks_n 100
