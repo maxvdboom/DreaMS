@@ -2,9 +2,9 @@
 #SBATCH --job-name=DreaMS_fine-tuning
 #SBATCH --partition=gpu_h100
 #SBATCH --nodes=1
-#SBATCH --gpus=1
-#SBATCH --cpus-per-task=16
-#SBATCH --time=02:00:00
+#SBATCH --gpus=4
+#SBATCH --cpus-per-task=64
+#SBATCH --time=24:00:00
 
 # Loading modules
 module load 2024
@@ -115,19 +115,19 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --dformat A \
  --model DreaMS \
  --lr 3e-5 \
- --batch_size 64 \
+ --batch_size 128 \
  --prec_intens 1.1 \
- --num_devices 1 \
+ --num_devices 4 \
  --max_epochs 103 \
  --log_every_n_steps 5 \
  --head_depth 1 \
  --seed 3407 \
- --train_precision 64 \
+ --train_precision 32 \
  --pre_trained_pth "$SCRATCH_PRETRAINED" \
- --val_check_interval 0.1 \
+ --val_check_interval 1.0 \
  --max_peaks_n 100 \
  --save_top_k 3 \
- --num_workers 16
+ --num_workers 64
 
 
 # Zipping checkpoints and copying to home

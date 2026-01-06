@@ -29,7 +29,7 @@ python3 training/train.py \
  --dformat A \
  --model DreaMS \
  --lr 3e-5 \
- --batch_size 64 \
+ --batch_size 128 \
  --prec_intens 1.1 \
  --num_devices 8 \
  --max_epochs 103 \
