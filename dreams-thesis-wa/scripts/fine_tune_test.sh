@@ -98,8 +98,8 @@ else
 fi
 echo ""
 
-# Move to running dir
-cd "${DREAMS_DIR}" || exit 3
+# Move to DreaMS repo root
+cd "$HOME/DreaMS" || exit 3
 
 # Run the training script with srun for SLURM
 srun --export=ALL --preserve-env python3 dreams/training/train.py \
