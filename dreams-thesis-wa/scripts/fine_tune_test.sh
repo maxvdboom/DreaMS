@@ -4,7 +4,7 @@
 #SBATCH --nodes=1
 #SBATCH --gpus=4
 #SBATCH --cpus-per-task=64
-#SBATCH --time=24:00:00
+#SBATCH --time=02:00:00
 
 # Loading modules
 module load 2024
@@ -118,13 +118,13 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --batch_size 128 \
  --prec_intens 1.1 \
  --num_devices 4 \
- --max_epochs 103 \
+ --max_epochs 5 \
  --log_every_n_steps 5 \
  --head_depth 1 \
  --seed 3407 \
  --train_precision 32 \
  --pre_trained_pth "$SCRATCH_PRETRAINED" \
- --val_check_interval 1.0 \
+ --val_check_interval 1 \
  --max_peaks_n 100 \
  --save_top_k 3 \
  --num_workers 64
