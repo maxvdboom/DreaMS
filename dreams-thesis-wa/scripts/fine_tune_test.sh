@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --time=02:00:00
 
-# Loaindg modules
+# Loading modules
 module load 2024
 module load Miniconda3/24.7.1-0
 
@@ -17,10 +17,32 @@ conda activate dreams
 # Export project definitions
 $(python -c "from dreams.definitions import export; export()")
 
+# Set up scratch directory
+SCRATCH_DIR="/scratch-shared/$USER/dreams_finetune_$$"
+HOME_OUTPUT_DIR="$HOME/DreaMS/dreams-thesis-wa/results/finetuning"
+
+echo "Setting up scratch-shared workspace..."
+mkdir -p "$SCRATCH_DIR"
+mkdir -p "$HOME_OUTPUT_DIR"
+
+# Copy input files to scratch (dataset + pre-trained model)
+echo "Copying dataset to scratch..."
+cp "$HOME/DreaMS/dreams-thesis-wa/data/processed/MassSpecGym_MurckoHist_split.hdf5" "$SCRATCH_DIR/"
+echo "Copying pre-trained model to scratch..."
+cp "${PRETRAINED}/ssl_model.ckpt" "$SCRATCH_DIR/"
+
+# Set paths to scratch locations
+SCRATCH_DATASET="$SCRATCH_DIR/MassSpecGym_MurckoHist_split.hdf5"
+SCRATCH_PRETRAINED="$SCRATCH_DIR/ssl_model.ckpt"
+SCRATCH_CHECKPOINTS="$SCRATCH_DIR/checkpoints"
+mkdir -p "$SCRATCH_CHECKPOINTS"
+
+echo "✅ Scratch setup complete: $SCRATCH_DIR"
+
 # Configuration
 PROJECT_NAME="MassSpecGym_Morgan2048"
 RUN_NAME="massspecgym_morgan2048_finetune_$(date +%Y%m%d_%H%M%S)"
-DATASET_PATH="./dreams-thesis-wa/data/processed/MassSpecGym_MurckoHist_split.hdf5"
+DATASET_PATH="$SCRATCH_DATASET"
 
 # WandB configuration
 # Credentials are stored in .wandb_secrets (gitignored)
@@ -79,10 +101,8 @@ echo ""
 # Move to running dir
 cd "${DREAMS_DIR}" || exit 3
 
-# Run the training script
-# Replace `python3 training/train.py` with `srun --export=ALL --preserve-env python3 training/train.py \`
-# when executing on a SLURM cluster via `sbatch`.
-python3 dreams/training/train.py \
+# Run the training script with srun for SLURM
+srun --export=ALL --preserve-env python3 dreams/training/train.py \
  $WANDB_ARGS \
  --job_key "$RUN_NAME" \
  --run_name "$RUN_NAME" \
@@ -97,16 +117,39 @@ python3 dreams/training/train.py \
  --num_devices 1 \
  --max_epochs 103 \
  --log_every_n_steps 5 \
-
  --head_depth 1 \
  --seed 3407 \
- --train_precision 64   \
- --pre_trained_pth "${PRETRAINED}/ssl_model.ckpt" \
+ --train_precision 64 \
+ --pre_trained_pth "$SCRATCH_PRETRAINED" \
  --val_check_interval 0.1 \
  --max_peaks_n 100 \
- --save_top_k -1
+ --save_top_k 3 \
+ --default_root_dir "$SCRATCH_CHECKPOINTS"
 
-# Contrastive fine-tuning
+
+# Zipping scratch checkpoints and copying to home
+echo ""
+echo "Zipping checkpoints..."
+cd "$SCRATCH_DIR"
+zip -r "${RUN_NAME}_checkpoints.zip" checkpoints/
+echo "✅ Created ${RUN_NAME}_checkpoints.zip"
+
+echo "Copying zip to home directory..."
+cp "${RUN_NAME}_checkpoints.zip" "$HOME_OUTPUT_DIR/"
+echo "✅ Checkpoints saved to: $HOME_OUTPUT_DIR/${RUN_NAME}_checkpoints.zip"
+
+# Clean up scratch
+echo "Cleaning up scratch directory..."
+rm -rf "$SCRATCH_DIR"
+echo "✅ Scratch cleaned up"
+
+echo ""
+echo "=================================="
+echo "Fine-tuning complete!"
+echo "Output: $HOME_OUTPUT_DIR/${RUN_NAME}_checkpoints.zip"
+echo "=================================="
+
+# Contrastive fine-tuning (commented out)
 # python3 training/train.py \
 #  --project_name CONTRASTIVE_FINE_TUNING \
 #  --job_key "lr5e-6_margin0.1_fixed_rel_intens_max_peaks_n100" \
