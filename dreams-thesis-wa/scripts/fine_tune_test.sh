@@ -98,11 +98,14 @@ else
 fi
 echo ""
 
-# Move to DreaMS repo root
-cd "$HOME/DreaMS" || exit 3
+# Move to scratch directory so checkpoints are written to fast storage
+cd "$SCRATCH_DIR" || exit 3
+
+# We need the DreaMS package, so add it to PYTHONPATH
+export PYTHONPATH="$HOME/DreaMS:$PYTHONPATH"
 
 # Run the training script with srun for SLURM
-srun --export=ALL --preserve-env python3 dreams/training/train.py \
+srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py" \
  $WANDB_ARGS \
  --job_key "$RUN_NAME" \
  --run_name "$RUN_NAME" \
@@ -123,20 +126,27 @@ srun --export=ALL --preserve-env python3 dreams/training/train.py \
  --pre_trained_pth "$SCRATCH_PRETRAINED" \
  --val_check_interval 0.1 \
  --max_peaks_n 100 \
- --save_top_k 3 \
- --default_root_dir "$SCRATCH_CHECKPOINTS"
+ --save_top_k 3
 
 
-# Zipping scratch checkpoints and copying to home
+# Zipping checkpoints and copying to home
+# Checkpoints are saved to {project_name}/{job_key}/ in the working directory (scratch)
+CHECKPOINT_DIR="$SCRATCH_DIR/$WANDB_PROJECT/$RUN_NAME"
 echo ""
-echo "Zipping checkpoints..."
-cd "$SCRATCH_DIR"
-zip -r "${RUN_NAME}_checkpoints.zip" checkpoints/
-echo "✅ Created ${RUN_NAME}_checkpoints.zip"
-
-echo "Copying zip to home directory..."
-cp "${RUN_NAME}_checkpoints.zip" "$HOME_OUTPUT_DIR/"
-echo "✅ Checkpoints saved to: $HOME_OUTPUT_DIR/${RUN_NAME}_checkpoints.zip"
+echo "Zipping checkpoints from $CHECKPOINT_DIR..."
+if [ -d "$CHECKPOINT_DIR" ]; then
+    cd "$SCRATCH_DIR"
+    zip -r "${RUN_NAME}_checkpoints.zip" "$WANDB_PROJECT/$RUN_NAME/"
+    echo "✅ Created ${RUN_NAME}_checkpoints.zip"
+    
+    echo "Copying zip to home directory..."
+    mv "${RUN_NAME}_checkpoints.zip" "$HOME_OUTPUT_DIR/"
+    echo "✅ Checkpoints saved to: $HOME_OUTPUT_DIR/${RUN_NAME}_checkpoints.zip"
+else
+    echo "⚠️ Warning: Checkpoint directory not found at $CHECKPOINT_DIR"
+    echo "   Listing scratch contents:"
+    ls -la "$SCRATCH_DIR"
+fi
 
 # Clean up scratch
 echo "Cleaning up scratch directory..."
