@@ -2,7 +2,7 @@
 #SBATCH --job-name=DreaMS_fine-tuning
 #SBATCH --partition=gpu_h100
 #SBATCH --nodes=1
-#SBATCH --gpus=4
+#SBATCH --gpus=1
 #SBATCH --cpus-per-task=64
 #SBATCH --time=02:00:00
 
@@ -115,7 +115,7 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --dformat A \
  --model DreaMS \
  --lr 3e-5 \
- --batch_size 1024 \
+ --batch_size 2048 \
  --prec_intens 1.1 \
  --num_devices 4 \
  --max_epochs 15 \
