@@ -26,6 +26,24 @@ import torch
 torch.set_printoptions(profile='full')
 torch.set_float32_matmul_precision('high')
 
+def maybe_enable_flash_attention(enable: bool, logger):
+    """Optionally enable CUDA flash attention backend if available."""
+    if not enable:
+        return
+    if not torch.cuda.is_available():
+        if logger:
+            logger.info('Flash attention requested but CUDA is not available; skipping.')
+        return
+    try:
+        torch.backends.cuda.enable_flash_sdp(True)
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
+        torch.backends.cuda.enable_math_sdp(False)
+        if logger:
+            logger.info('Flash attention enabled (CUDA SDP flash backend).')
+    except Exception as exc:
+        if logger:
+            logger.warning(f'Could not enable flash attention backend: {exc}')
+
 # Import memory optimization utilities  
 import sys
 import os
@@ -94,6 +112,9 @@ def main(args):
     logger = setup_logger(run_dir.with_suffix('.log'))
     logger.info(args)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    # Enable flash attention backend when requested
+    maybe_enable_flash_attention(args.enable_flash_attention, logger)
 
     # Define the way to preprocess spectra (same for train or validation on independent datasets)
     spec_preproc = du.SpectrumPreprocessor(
@@ -285,6 +306,17 @@ def main(args):
                 mol_props_calc = dataset.prop_calc
                 model = RegressionHead(backbone, args.lr, args.weight_decay, sigmoid=False, out_dim=len(mol_props_calc),
                                        mol_props_calc=mol_props_calc, head_depth=args.head_depth, dropout=args.dropout)
+
+        # Apply torch.compile if requested
+        if args.torch_compile != 'none':
+            if not torch.cuda.is_available():
+                logger.warning('torch.compile requested but CUDA is not available; skipping.')
+            else:
+                try:
+                    model = torch.compile(model, mode=args.torch_compile)
+                    logger.info(f'torch.compile enabled with mode={args.torch_compile}.')
+                except Exception as exc:
+                    logger.warning(f'Failed to torch.compile model (mode={args.torch_compile}): {exc}')
 
         # Set float64 weights
         if args.train_precision == 64:

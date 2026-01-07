@@ -2,8 +2,10 @@
 #SBATCH --job-name=DreaMS_fine-tuning
 #SBATCH --partition=gpu_h100
 #SBATCH --nodes=1
-#SBATCH --gpus=4
-#SBATCH --cpus-per-task=64
+#SBATCH --nodes=1
+#SBATCH --ntasks=4
+#SBATCH --gpus-per-task=1
+#SBATCH --cpus-per-task=16
 #SBATCH --time=02:00:00
 
 # Loading modules
@@ -105,7 +107,7 @@ cd "$SCRATCH_DIR" || exit 3
 export PYTHONPATH="$HOME/DreaMS:$PYTHONPATH"
 
 # Run the training script with srun for SLURM
-srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py" \
+srun --cpu-bind=cores --distribution=block:block --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py" \
  $WANDB_ARGS \
  --job_key "$RUN_NAME" \
  --run_name "$RUN_NAME" \
@@ -115,19 +117,21 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --dformat A \
  --model DreaMS \
  --lr 3e-5 \
- --batch_size 2048 \
+ --batch_size 512 \
  --prec_intens 1.1 \
  --num_devices 4 \
  --max_epochs 15 \
- --log_every_n_steps 5 \
+ --log_every_n_steps 50 \
  --head_depth 1 \
  --seed 3407 \
- --train_precision 32 \
+ --train_precision bf16 \
+ --torch_compile reduce-overhead \
+ --enable_flash_attention \
  --pre_trained_pth "$SCRATCH_PRETRAINED" \
- --val_check_interval 1 \
+ --val_check_interval 1.0 \
  --max_peaks_n 100 \
  --save_top_k 3 \
- --num_workers 64 \
+ --num_workers 32 \
  --early_stopping_patience 5 \
  --early_stopping_min_delta 0.01
 
