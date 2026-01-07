@@ -2,8 +2,9 @@
 #SBATCH --job-name=DreaMS_fine-tuning
 #SBATCH --partition=gpu_h100
 #SBATCH --nodes=1
-#SBATCH --gpus=4
-#SBATCH --cpus-per-task=64
+#SBATCH --ntasks=4
+#SBATCH --gpus-per-task=1
+#SBATCH --cpus-per-task=16
 #SBATCH --time=02:00:00
 
 # Loading modules
@@ -123,8 +124,6 @@ srun --cpu-bind=cores --distribution=block:block --export=ALL --preserve-env pyt
  --head_depth 1 \
  --seed 3407 \
  --train_precision bf16 \
- --torch_compile reduce-overhead \
- --enable_flash_attention \
  --pre_trained_pth "$SCRATCH_PRETRAINED" \
  --val_check_interval 1.0 \
  --max_peaks_n 100 \
