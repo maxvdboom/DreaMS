@@ -2,7 +2,6 @@
 #SBATCH --job-name=DreaMS_fine-tuning
 #SBATCH --partition=gpu_h100
 #SBATCH --nodes=1
-#SBATCH --nodes=1
 #SBATCH --ntasks=4
 #SBATCH --gpus-per-task=1
 #SBATCH --cpus-per-task=16
