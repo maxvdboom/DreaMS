@@ -1044,15 +1044,25 @@ class LabeledSpectraDataset(Dataset):
             else:
                 label = float(formula[elem])
         else:
-            mol = Chem.MolFromSmiles(self.msdata.get_smiles(i))
+            # For fingerprints: try to read pre-computed from HDF5 first, fall back to on-the-fly computation
             if self.label.startswith('fp'):  # e.g. fp_morgan_2048
-                label = mu.fp_func_from_str(self.label)(mol)
-            elif self.label == 'qed':
-                label = float(Chem.QED.qed(mol))
-            elif self.label == 'mol_props':
-                label = self.prop_calc.mol_to_props(mol, min_max_norm=True)
+                # Try to read pre-computed fingerprint from HDF5
+                if self.label in self.msdata.columns():
+                    label = self.msdata.get_values(self.label, i)
+                    # Convert to float32 tensor-compatible format
+                    label = np.array(label, dtype=np.float32)
+                else:
+                    # Fall back to on-the-fly computation (slower)
+                    mol = Chem.MolFromSmiles(self.msdata.get_smiles(i))
+                    label = mu.fp_func_from_str(self.label)(mol)
             else:
-                raise ValueError(f'Invalid label name "{self.label}".')
+                mol = Chem.MolFromSmiles(self.msdata.get_smiles(i))
+                if self.label == 'qed':
+                    label = float(Chem.QED.qed(mol))
+                elif self.label == 'mol_props':
+                    label = self.prop_calc.mol_to_props(mol, min_max_norm=True)
+                else:
+                    raise ValueError(f'Invalid label name "{self.label}".')
 
         # TODO: spec to definitions.SPECTRUM, prec_mz to definitions.PRECURSOR_MZ, etc.
         item = {
@@ -1065,6 +1075,7 @@ class LabeledSpectraDataset(Dataset):
         item['charge'] = 1.0
 
         if self.return_smiles:
+            mol = Chem.MolFromSmiles(self.msdata.get_smiles(i))
             item['smiles'] = Chem.MolToSmiles(mol, isomericSmiles=False, canonical=True)
 
         return item
