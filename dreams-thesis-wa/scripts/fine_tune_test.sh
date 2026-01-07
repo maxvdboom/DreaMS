@@ -127,9 +127,7 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --val_check_interval 1.0 \
  --max_peaks_n 100 \
  --save_top_k 3 \
- --num_workers 32 \
- --early_stopping_patience 5 \
- --early_stopping_min_delta 0.01
+ --num_workers 32
 
 
 # Zipping checkpoints and copying to home
