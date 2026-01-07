@@ -117,9 +117,11 @@ def main(args):
     maybe_enable_flash_attention(args.enable_flash_attention, logger)
 
     # Define the way to preprocess spectra (same for train or validation on independent datasets)
+    # Use float32 preprocessing for 16/bf16 training (Numpy/bfloat16 not needed here)
+    preproc_precision = 64 if str(args.train_precision) == '64' else 32
     spec_preproc = du.SpectrumPreprocessor(
         dformat=args.dformat, prec_intens=args.prec_intens, n_highest_peaks=args.max_peaks_n,
-        spec_entropy_cleaning=args.spec_entropy_cleaning, precision=args.train_precision,
+        spec_entropy_cleaning=args.spec_entropy_cleaning, precision=preproc_precision,
         mz_shift_aug_p=args.mz_shift_aug_p, mz_shift_aug_max=args.mz_shift_aug_max
     )
 
@@ -319,7 +321,7 @@ def main(args):
                     logger.warning(f'Failed to torch.compile model (mode={args.torch_compile}): {exc}')
 
         # Set float64 weights
-        if args.train_precision == 64:
+        if str(args.train_precision) == '64':
             model = model.double()
 
         # Define wandb log

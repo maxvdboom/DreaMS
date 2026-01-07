@@ -99,7 +99,8 @@ def parse_args():
     # Model (training, regularization)
     parser.add_argument('--lr', type=float, required=True)
     parser.add_argument('--max_epochs', type=int, default=3000)
-    parser.add_argument('--train_precision', type=int, default=32)
+    parser.add_argument('--train_precision', type=str, default='32', choices=['16', 'bf16', '16-mixed', '32', '64'],
+                        help='Training precision for PyTorch Lightning Trainer (supports bf16 / 16-mixed / 32 / 64).')
     parser.add_argument('--dropout', type=float, default=0.0)
     parser.add_argument('--att_dropout', type=float, default=0.0)
     parser.add_argument('--residual_dropout', type=float, default=0.0)
