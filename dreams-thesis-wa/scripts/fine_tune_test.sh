@@ -117,7 +117,7 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --lr 3e-5 \
  --batch_size 2048 \
  --prec_intens 1.1 \
- --num_devices 4 \
+ --num_devices 1 \
  --max_epochs 15 \
  --log_every_n_steps 5 \
  --head_depth 1 \
