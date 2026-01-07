@@ -45,7 +45,7 @@ RUN_NAME="massspecgym_morgan2048_finetune_$(date +%Y%m%d_%H%M%S)"
 DATASET_PATH="$SCRATCH_DATASET"
 
 # WandB configuration
-# Credentials are stored in .wandb_secrets (gitignored)
+# Credentials are stored in .wandb_secrets (gitignored)gi
 # See .wandb_secrets.template for setup instructions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/.wandb_secrets" ]; then
@@ -115,7 +115,7 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --dformat A \
  --model DreaMS \
  --lr 3e-5 \
- --batch_size 512 \
+ --batch_size 1024 \
  --prec_intens 1.1 \
  --num_devices 4 \
  --max_epochs 15 \
@@ -127,7 +127,7 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --val_check_interval 1 \
  --max_peaks_n 100 \
  --save_top_k 3 \
- --num_workers 64 \
+ --num_workers 32 \
  --early_stopping_patience 5 \
  --early_stopping_min_delta 0.01
 

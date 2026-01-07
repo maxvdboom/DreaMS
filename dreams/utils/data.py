@@ -1032,9 +1032,16 @@ class LabeledSpectraDataset(Dataset):
         return len(self.spectra)
 
     def __getitem__(self, i):
-        spectrum = self.msdata.get_spectra(i)
-        prec_mz = self.msdata.get_prec_mzs(i)
-        spectrum = self.spec_preproc(spectrum, prec_mz=prec_mz, high_form=False)
+        # Try to use pre-processed spectrum if available (much faster)
+        if 'processed_spectrum' in self.msdata.columns():
+            spectrum = self.msdata.get_values('processed_spectrum', i)
+            spectrum = spectrum.T  # Convert to (2, 101) for consistency
+            prec_mz = self.msdata.get_prec_mzs(i)
+        else:
+            # Fall back to on-the-fly preprocessing
+            spectrum = self.msdata.get_spectra(i)
+            prec_mz = self.msdata.get_prec_mzs(i)
+            spectrum = self.spec_preproc(spectrum, prec_mz=prec_mz, high_form=False)
 
         if self.label.startswith('num') or self.label.startswith('has'): # e.g. num_C or has_C
             elem = self.label.split('_')[1]
