@@ -27,12 +27,12 @@ mkdir -p "$HOME_OUTPUT_DIR"
 
 # Copy input files to scratch (dataset + pre-trained model)
 echo "Copying dataset to scratch..."
-cp "$HOME/DreaMS/dreams-thesis-wa/data/processed/MassSpecGym_MurckoHist_subset10k_v2.hdf5" "$SCRATCH_DIR/"
+cp "$HOME/DreaMS/dreams-thesis-wa/data/processed/MassSpecGym_MurckoHist_split.hdf5" "$SCRATCH_DIR/"
 echo "Copying pre-trained model to scratch..."
 cp "${PRETRAINED}/ssl_model.ckpt" "$SCRATCH_DIR/"
 
 # Set paths to scratch locations
-SCRATCH_DATASET="$SCRATCH_DIR/MassSpecGym_MurckoHist_subset10k_v2.hdf5"
+SCRATCH_DATASET="$SCRATCH_DIR/MassSpecGym_MurckoHist_split.hdf5"
 SCRATCH_PRETRAINED="$SCRATCH_DIR/ssl_model.ckpt"
 SCRATCH_CHECKPOINTS="$SCRATCH_DIR/checkpoints"
 mkdir -p "$SCRATCH_CHECKPOINTS"
@@ -115,10 +115,10 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --dformat A \
  --model DreaMS \
  --lr 3e-5 \
- --batch_size 128 \
+ --batch_size 512 \
  --prec_intens 1.1 \
  --num_devices 4 \
- --max_epochs 5 \
+ --max_epochs 15 \
  --log_every_n_steps 5 \
  --head_depth 1 \
  --seed 3407 \
@@ -127,7 +127,9 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --val_check_interval 1 \
  --max_peaks_n 100 \
  --save_top_k 3 \
- --num_workers 64
+ --num_workers 64 \
+ --early_stopping_patience 5 \
+ --early_stopping_min_delta 0.01
 
 
 # Zipping checkpoints and copying to home

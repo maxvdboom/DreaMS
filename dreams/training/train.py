@@ -6,7 +6,7 @@ import wandb
 import time
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning import seed_everything
-from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.callbacks import LearningRateMonitor, EarlyStopping
 from pathlib import Path
 import warnings
 from numba import NumbaDeprecationWarning
@@ -311,6 +311,18 @@ def main(args):
             ),
             MemoryOptimizedCallback(clear_cache_every_n_steps=25)
         ]
+        
+        # Add early stopping if enabled (for fine-tuning only, not pre-training)
+        if args.early_stopping_patience > 0 and args.train_regime == 'fine-tuning':
+            callbacks.append(
+                EarlyStopping(
+                    monitor='Val loss',
+                    patience=args.early_stopping_patience,
+                    min_delta=args.early_stopping_min_delta,
+                    mode='min',
+                    verbose=True
+                )
+            )
 
         if args.train_regime == 'pre-training':
 
