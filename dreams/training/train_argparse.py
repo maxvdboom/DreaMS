@@ -127,8 +127,6 @@ def parse_args():
     parser.add_argument('--log_figs', action='store_true')
     parser.add_argument('--early_stopping_patience', type=int, default=5, help='Number of validation epochs with no improvement after which training will be stopped. Set to 0 to disable.')
     parser.add_argument('--early_stopping_min_delta', type=float, default=0.0, help='Minimum change in the monitored quantity to qualify as an improvement.')
-    parser.add_argument('--torch_compile', type=str, default='none', choices=['none', 'reduce-overhead', 'max-autotune'], help='Enable torch.compile with the selected mode.')
-    parser.add_argument('--enable_flash_attention', action='store_true', help='Force enable CUDA flash attention backend where available.')
 
     # Infrastructure
     # parser.add_argument('--accelerator', type=str, default='gpu')

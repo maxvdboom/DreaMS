@@ -29,7 +29,7 @@ mkdir -p "$HOME_OUTPUT_DIR"
 echo "Copying dataset to scratch..."
 cp "$HOME/DreaMS/dreams-thesis-wa/data/processed/MassSpecGym_MurckoHist_split.hdf5" "$SCRATCH_DIR/"
 echo "Copying pre-trained model to scratch..."
-cp "${PRETRAINED}/ssl_model.ckpt" "$SCRATCH_DIR/"
+cp "${PRETRAINED}/ssl_model.ckpt" "$SCRATCH_DIR/"`
 
 # Set paths to scratch locations
 SCRATCH_DATASET="$SCRATCH_DIR/MassSpecGym_MurckoHist_split.hdf5"

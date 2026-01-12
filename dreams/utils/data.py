@@ -1032,16 +1032,10 @@ class LabeledSpectraDataset(Dataset):
         return len(self.spectra)
 
     def __getitem__(self, i):
-        # Try to use pre-processed spectrum if available (much faster)
-        if 'processed_spectrum' in self.msdata.columns():
-            # Use preprocessed spectrum: shape (101, 2) = precursor + 100 peaks
-            spectrum = self.msdata.get_values('processed_spectrum', i)
-            prec_mz = self.msdata.get_prec_mzs(i)
-        else:
-            # Fallback to on-the-fly preprocessing
-            spectrum = self.msdata.get_spectra(i)
-            prec_mz = self.msdata.get_prec_mzs(i)
-            spectrum = self.spec_preproc(spectrum, prec_mz=prec_mz, high_form=False)
+        # Always use on-the-fly preprocessing (more reliable)
+        spectrum = self.msdata.get_spectra(i)
+        prec_mz = self.msdata.get_prec_mzs(i)
+        spectrum = self.spec_preproc(spectrum, prec_mz=prec_mz, high_form=False)
 
         if self.label.startswith('num') or self.label.startswith('has'): # e.g. num_C or has_C
             elem = self.label.split('_')[1]
@@ -1051,17 +1045,10 @@ class LabeledSpectraDataset(Dataset):
             else:
                 label = float(formula[elem])
         else:
-            # For fingerprints: try to read pre-computed from HDF5 first, fall back to on-the-fly computation
+            # For fingerprints: always compute on-the-fly for consistency
             if self.label.startswith('fp'):  # e.g. fp_morgan_2048
-                # Try to read pre-computed fingerprint from HDF5
-                if self.label in self.msdata.columns():
-                    label = self.msdata.get_values(self.label, i)
-                    # Convert to float32 tensor-compatible format
-                    label = np.array(label, dtype=np.float32)
-                else:
-                    # Fall back to on-the-fly computation (slower)
-                    mol = Chem.MolFromSmiles(self.msdata.get_smiles(i))
-                    label = mu.fp_func_from_str(self.label)(mol)
+                mol = Chem.MolFromSmiles(self.msdata.get_smiles(i))
+                label = mu.fp_func_from_str(self.label)(mol)
             else:
                 mol = Chem.MolFromSmiles(self.msdata.get_smiles(i))
                 if self.label == 'qed':
@@ -1627,12 +1614,6 @@ class KNNValidation(ContrastiveValidation):
 
 class CVDataModule(pl.LightningDataModule):
 
-    def _loader_kwargs(self):
-        kwargs = dict(num_workers=self.num_workers, pin_memory=True, persistent_workers=self.num_workers > 0)
-        if self.num_workers > 0:
-            kwargs["prefetch_factor"] = 4
-        return kwargs
-
     def __init__(self, dataset: Dataset, fold_idx: pd.Series, batch_size: int, num_workers=0):
         super().__init__()
         self.dataset = dataset
@@ -1650,10 +1631,10 @@ class CVDataModule(pl.LightningDataModule):
         return self.fold_idx.nunique()
 
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(self.train_fold, shuffle=True, batch_size=self.batch_size, **self._loader_kwargs())
+        return DataLoader(self.train_fold, shuffle=True, batch_size=self.batch_size, num_workers=self.num_workers)
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(self.val_fold, shuffle=False, batch_size=self.batch_size, **self._loader_kwargs())
+        return DataLoader(self.val_fold, shuffle=False, batch_size=self.batch_size, num_workers=self.num_workers)
 
 
 class RandomSplitDataModule(pl.LightningDataModule):
@@ -1672,12 +1653,6 @@ class RandomSplitDataModule(pl.LightningDataModule):
         train_size = len(dataset) - val_size
         self.train_subset, self.val_subset = torch.utils.data.random_split(dataset, [train_size, val_size])
 
-    def _loader_kwargs(self):
-        kwargs = dict(num_workers=self.num_workers, pin_memory=True, persistent_workers=self.num_workers > 0)
-        if self.num_workers > 0:
-            kwargs["prefetch_factor"] = 4
-        return kwargs
-
     def train_dataloader(self) -> DataLoader:
         if self.max_var_features is not None:
             batch_sampler = MaxVarBatchSampler(
@@ -1685,14 +1660,14 @@ class RandomSplitDataModule(pl.LightningDataModule):
                 self.max_var_features[self.train_subset.indices],
                 batch_size=self.batch_size
             )
-            return DataLoader(self.train_subset, batch_sampler=batch_sampler, shuffle=True, **self._loader_kwargs())
+            return DataLoader(self.train_subset, batch_sampler=batch_sampler, num_workers=self.num_workers, shuffle=True)
         else:
-            return DataLoader(self.train_subset, batch_size=self.batch_size, shuffle=True,
-                              drop_last=True, **self._loader_kwargs())
+            return DataLoader(self.train_subset, num_workers=self.num_workers, batch_size=self.batch_size, shuffle=True,
+                              drop_last=True)
 
     def val_dataloader(self) -> DataLoader:
-        return DataLoader(self.val_subset, drop_last=True, batch_size=self.batch_size,
-                          shuffle=False, **self._loader_kwargs())
+        return DataLoader(self.val_subset, drop_last=True, batch_size=self.batch_size, num_workers=self.num_workers,
+                          shuffle=False)
 
     def test_dataloader(self):
         return
@@ -1748,28 +1723,19 @@ class SplittedDataModule(pl.LightningDataModule):
             rand_idx = random.sample(list(range(len(self.train_subset))), self.n_train_samples)
             self.train_subset = Subset(self.train_subset, rand_idx)
 
-    def _loader_kwargs(self):
-        kwargs = dict(num_workers=self.num_workers, pin_memory=True, persistent_workers=self.num_workers > 0)
-        if self.num_workers > 0:
-            kwargs["prefetch_factor"] = 4
-        return kwargs
-
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(self.train_subset, shuffle=True, drop_last=True,
-                          batch_size=self.batch_size if self.batch_size else len(self.train_subset),
-                          **self._loader_kwargs())
+        return DataLoader(self.train_subset, shuffle=True, drop_last=True, num_workers=self.num_workers,
+                          batch_size=self.batch_size if self.batch_size else len(self.train_subset))
 
     def val_dataloader(self) -> DataLoader:
         if self.val_subset:
-            return DataLoader(self.val_subset, shuffle=False, drop_last=False,
-                              batch_size=self.batch_size if self.batch_size else len(self.val_subset),
-                              **self._loader_kwargs())
+            return DataLoader(self.val_subset, shuffle=False, drop_last=False, num_workers=self.num_workers,
+                              batch_size=self.batch_size if self.batch_size else len(self.val_subset))
 
     def test_dataloader(self) -> DataLoader:
         if self.test_subset:
-            return DataLoader(self.test_subset, shuffle=False, drop_last=False,
-                              batch_size=self.batch_size if self.batch_size else len(self.test_subset),
-                              **self._loader_kwargs())
+            return DataLoader(self.test_subset, shuffle=False, drop_last=False, num_workers=self.num_workers,
+                              batch_size=self.batch_size if self.batch_size else len(self.test_subset))
 
 
 class SSLProbingValidation(pl.Callback):

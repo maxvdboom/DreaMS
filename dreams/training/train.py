@@ -26,82 +26,8 @@ import torch
 torch.set_printoptions(profile='full')
 torch.set_float32_matmul_precision('high')
 
-def maybe_enable_flash_attention(enable: bool, logger):
-    """Optionally enable CUDA flash attention backend if available."""
-    if not enable:
-        return
-    if not torch.cuda.is_available():
-        if logger:
-            logger.info('Flash attention requested but CUDA is not available; skipping.')
-        return
-    try:
-        torch.backends.cuda.enable_flash_sdp(True)
-        torch.backends.cuda.enable_mem_efficient_sdp(True)
-        torch.backends.cuda.enable_math_sdp(False)
-        if logger:
-            logger.info('Flash attention enabled (CUDA SDP flash backend).')
-    except Exception as exc:
-        if logger:
-            logger.warning(f'Could not enable flash attention backend: {exc}')
-
-# Import memory optimization utilities  
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-try:
-    from memory_optimized_train import MemoryOptimizedCallback, get_memory_optimized_args
-    try:
-        from extreme_memory_optimization import ExtremeMemoryOptimizedCallback, get_extreme_memory_args, setup_extreme_memory_environment
-    except ImportError:
-        ExtremeMemoryOptimizedCallback = MemoryOptimizedCallback
-        get_extreme_memory_args = get_memory_optimized_args
-        def setup_extreme_memory_environment():
-            pass
-except ImportError:
-    # Fallback - define minimal versions inline
-    import gc
-    from pytorch_lightning.callbacks import Callback
-    
-    class MemoryOptimizedCallback(Callback):
-        def __init__(self, clear_cache_every_n_steps=50):
-            self.clear_cache_every_n_steps = clear_cache_every_n_steps
-            self.step_count = 0
-        
-        def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-            self.step_count += 1
-            if self.step_count % self.clear_cache_every_n_steps == 0:
-                torch.cuda.empty_cache()
-                gc.collect()
-        
-        def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
-            torch.cuda.empty_cache()
-        
-        def on_validation_epoch_end(self, trainer, pl_module):
-            torch.cuda.empty_cache()
-            gc.collect()
-    
-    def get_memory_optimized_args(original_args):
-        original_args.batch_size = max(1, original_args.batch_size // 2)
-        original_args.num_workers_data = min(16, original_args.num_workers_data)  # Allow up to 16 workers
-        original_args.val_check_interval = 0.25
-        return original_args
-    
-    ExtremeMemoryOptimizedCallback = MemoryOptimizedCallback
-    get_extreme_memory_args = get_memory_optimized_args
-    def setup_extreme_memory_environment():
-        pass
-
 
 def main(args):
-
-    # Setup extreme memory optimization environment if available
-    try:
-        setup_extreme_memory_environment()
-    except:
-        pass
-
-    # Apply memory optimizations
-    args = get_memory_optimized_args(args)
     
     # Prepare seeds and auxiliary variables
     seed_everything(args.seed)
@@ -112,9 +38,6 @@ def main(args):
     logger = setup_logger(run_dir.with_suffix('.log'))
     logger.info(args)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    # Enable flash attention backend when requested
-    maybe_enable_flash_attention(args.enable_flash_attention, logger)
 
     # Define the way to preprocess spectra (same for train or validation on independent datasets)
     # Use float32 preprocessing for 16/bf16 training (Numpy/bfloat16 not needed here)
@@ -309,17 +232,6 @@ def main(args):
                 model = RegressionHead(backbone, args.lr, args.weight_decay, sigmoid=False, out_dim=len(mol_props_calc),
                                        mol_props_calc=mol_props_calc, head_depth=args.head_depth, dropout=args.dropout)
 
-        # Apply torch.compile if requested
-        if args.torch_compile != 'none':
-            if not torch.cuda.is_available():
-                logger.warning('torch.compile requested but CUDA is not available; skipping.')
-            else:
-                try:
-                    model = torch.compile(model, mode=args.torch_compile)
-                    logger.info(f'torch.compile enabled with mode={args.torch_compile}.')
-                except Exception as exc:
-                    logger.warning(f'Failed to torch.compile model (mode={args.torch_compile}): {exc}')
-
         # Set float64 weights
         if str(args.train_precision) == '64':
             model = model.double()
@@ -342,8 +254,7 @@ def main(args):
             pl.callbacks.ModelCheckpoint(
                 monitor='Train loss', save_top_k=args.save_top_k, mode='min',
                 dirpath=run_dir, save_last=True, every_n_train_steps=1000
-            ),
-            MemoryOptimizedCallback(clear_cache_every_n_steps=25)
+            )
         ]
         
         # Add early stopping if enabled (for fine-tuning only, not pre-training)
