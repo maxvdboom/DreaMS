@@ -115,10 +115,6 @@ for i in range(len(heatmap_data)):
         ax.text(j, i, f'{val:,}', ha='center', va='center', 
                 fontsize=9, color=color, fontweight='bold')
 
-# Title
-ax.set_title('Distribution of Molecular Superclasses\nAcross Scaffold-Based Data Splits', 
-             fontsize=12, fontweight='bold', pad=15)
-
 # Add note about Other classes
 other_train = df.iloc[top_n:]['Train'].sum()
 other_val = df.iloc[top_n:]['Validation'].sum()
