@@ -114,8 +114,8 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --dataset_pth "$DATASET_PATH" \
  --dformat A \
  --model DreaMS \
- --lr 7.5e-6 \
- --batch_size 512 \
+ --lr 1.5e-5 \
+ --batch_size 256 \
  --prec_intens 1.1 \
  --num_devices 4 \
  --max_epochs 103 \
