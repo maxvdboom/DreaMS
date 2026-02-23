@@ -85,7 +85,9 @@ def main(args):
             )
             data_module = du.SplittedDataModule(
                 dataset=dataset,
-                split_mask=pd.Series(msdata.get_values(FOLD)),
+                split_mask=pd.Series(msdata.get_values(FOLD)).apply(
+                    lambda x: x.decode('utf-8') if isinstance(x, bytes) else x
+                ),
                 batch_size=args.batch_size,
                 num_workers=args.num_workers_data,
                 n_train_samples=args.n_samples,
