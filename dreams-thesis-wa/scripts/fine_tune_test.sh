@@ -124,10 +124,11 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --seed 3407 \
  --train_precision 32 \
  --pre_trained_pth "$SCRATCH_PRETRAINED" \
- --val_check_interval 0.1 \
+ --val_check_interval 0.5 \
  --max_peaks_n 100 \
  --save_top_k 3 \
- --num_workers 32
+ --num_workers 32 \
+ --early_stopping_patience 20
 
 
 # Zipping checkpoints and copying to home
