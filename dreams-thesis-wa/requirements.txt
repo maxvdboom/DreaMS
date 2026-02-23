@@ -12,6 +12,7 @@ map4
 matplotlib
 seaborn
 umap-learn
+adjustText  # For automatic label positioning to avoid overlaps
 
 # Jupyter
 jupyter
