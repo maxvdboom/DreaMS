@@ -575,7 +575,8 @@ class FingerprintHead(FineTuningHead):
 
     def __init__(self, backbone: Path, fp_str: str, lr, batch_size, weight_decay, dropout=0, loss='cos',
                  retrieval_val_pth=None, retrieval_epoch_freq=10, unfreeze_backbone_at_epoch=0,
-                 head_depth=1, store_val_out_dir: Path = None, head_phi_depth: int = 0):
+                 head_depth=1, store_val_out_dir: Path = None, head_phi_depth: int = 0,
+                 pos_weight: Optional[float] = None):
         """
         Initialize the FingerprintHead.
 
@@ -608,14 +609,26 @@ class FingerprintHead(FineTuningHead):
             self.store_val_out_dir.mkdir(parents=True, exist_ok=True)
 
         # Define loss function
-        if loss == 'cross_entropy':
+        self.loss_name = loss
+        self.pos_weight = pos_weight
+        if loss in {'cross_entropy', 'bce'}:
             self.loss = nn.BCELoss()
+            self.uses_logits_loss = False
+        elif loss == 'bce_logits':
+            if self.pos_weight is not None:
+                pos_weight_tensor = torch.full((self.fp_size,), float(self.pos_weight), dtype=torch.float32)
+                self.loss = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
+            else:
+                self.loss = nn.BCEWithLogitsLoss()
+            self.uses_logits_loss = True
         elif loss == 'cos':
             self.loss = CosSimLoss()
+            self.uses_logits_loss = False
         elif loss == 'smooth_iou':
             self.loss = SmoothIoULoss()
+            self.uses_logits_loss = False
         else:
-            raise ValueError(f'Invalid loss function name: {self.loss_f}.')
+            raise ValueError(f'Invalid loss function name: {self.loss_name}.')
 
         # Define head for the backbone
         if self.head_phi_depth > 1:
@@ -660,7 +673,12 @@ class FingerprintHead(FineTuningHead):
             Tuple[torch.Tensor, torch.Tensor]: A tuple containing the predictions and the loss.
         """
         pred = self(data['spec'], data['charge'])
-        loss = self.loss(pred, data['label'])
+        target = data['label'].float()
+        if self.loss_name in {'cross_entropy', 'bce'}:
+            pred_for_loss = torch.sigmoid(pred)
+        else:
+            pred_for_loss = pred
+        loss = self.loss(pred_for_loss, target)
         return pred, loss
 
     def validate(self, data, batch_idx, dataloader_idx):
@@ -677,8 +695,9 @@ class FingerprintHead(FineTuningHead):
         """
         pred, loss = self.step(data, batch_idx)
         real = data['label']
+        pred_for_metrics = torch.sigmoid(pred) if self.uses_logits_loss else pred
 
-        metrics = self.val_metrics(pred, real)
+        metrics = self.val_metrics(pred_for_metrics, real)
         metrics[f'Val loss'] = loss
 
         self.log_dict(metrics, sync_dist=True, on_epoch=True, on_step=False, batch_size=self.batch_size,
@@ -689,12 +708,12 @@ class FingerprintHead(FineTuningHead):
 
             if self.store_val_out_dir:
                 torch.save(
-                    dict(data, **{'pred': pred}),
+                    dict(data, **{'pred': pred_for_metrics}),
                     self.store_val_out_dir / f'epoch{self.trainer.current_epoch}_rank{self.trainer.global_rank}_batch{batch_idx}.pt'
                 )
 
-            for i in range(len(pred)):
-                self.val_retrieval.retrieve_inchi14s(query_fp=pred[i].cpu().numpy(), label_smiles=data['smiles'][i])
+            for i in range(len(pred_for_metrics)):
+                self.val_retrieval.retrieve_inchi14s(query_fp=pred_for_metrics[i].cpu().numpy(), label_smiles=data['smiles'][i])
 
         return loss
 

@@ -66,6 +66,10 @@ def parse_args():
     parser.add_argument('--focal_loss_alpha', default=None, type=float)
     parser.add_argument('--cos_reg_alpha', type=float)
     parser.add_argument('--cos_reg_reduction', type=str, choices=['max', 'mean'])
+    parser.add_argument('--fp_loss', type=str, default='cos', choices=['cos', 'bce_logits', 'bce', 'cross_entropy', 'smooth_iou'],
+                        help='Loss for fingerprint fine-tuning heads.')
+    parser.add_argument('--fp_pos_weight', type=float, default=None,
+                        help='Optional positive class weight for BCE fingerprint loss (helps sparse fingerprints).')
 
     # Model (MS-specific hyperparameters)
     parser.add_argument('--d_fourier', type=int)

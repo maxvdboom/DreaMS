@@ -215,7 +215,8 @@ def main(args):
                                         retrieval_val_pth=args.retrieval_val_pth, batch_size=args.batch_size,
                                         unfreeze_backbone_at_epoch=args.unfreeze_backbone_at_epoch,
                                         store_val_out_dir=None,  # Disable to save memory
-                                        head_depth=args.head_depth, head_phi_depth=args.head_phi_depth)
+                                        head_depth=args.head_depth, head_phi_depth=args.head_phi_depth,
+                                        loss=args.fp_loss, pos_weight=args.fp_pos_weight)
             # TODO: refactor backbone
             if args.train_objective in {'num_C', 'num_O'}:
                 model = IntRegressionHead(args.pre_trained_pth, args.lr, args.weight_decay)
