@@ -209,7 +209,8 @@ def main(args):
         # Append fine-tuning heads
         if 'fine-tuning' in args.train_regime and args.model != 'DeepSets':
             backbone = args.pre_trained_pth if args.pre_trained_pth else DreaMS(args, spec_preproc)
-            if args.train_objective in {'fp_morgan_2048', 'fp_morgan_4096', 'fp_rdkit_2048', 'fp_rdkit_4096'}:
+            if args.train_objective in {'fp_morgan_2048', 'fp_morgan_4096', 'fp_rdkit_2048', 'fp_rdkit_4096',
+                                        'fp_maccs_166', 'fp_map4_2048'}:
                 model = FingerprintHead(backbone=backbone, fp_str=args.train_objective,
                                         lr=args.lr, weight_decay=args.weight_decay, dropout=args.dropout,
                                         retrieval_val_pth=args.retrieval_val_pth, batch_size=args.batch_size,

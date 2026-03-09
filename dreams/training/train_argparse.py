@@ -52,7 +52,8 @@ def parse_args():
     parser.add_argument('--frac_masks', type=float)
     parser.add_argument('--train_objective', type=str, required=True, choices=['mask_peak', 'mask_mz', 'mask_intensity',
         'mask_mz_hot', 'mask_peak_hot', 'shuffling', 'num_C', 'num_O', 'has_N', 'has_Cl', 'has_F', 'qed', 'fp_rdkit_2048',
-        'fp_rdkit_4096', 'fp_morgan_2048', 'fp_morgan_4096', 'mol_props', 'contrastive_spec_embs'])
+        'fp_rdkit_4096', 'fp_morgan_2048', 'fp_morgan_4096', 'fp_maccs_166', 'fp_map4_2048', 'mol_props',
+        'contrastive_spec_embs'])
     parser.add_argument('--deterministic_mask', action='store_true')
     parser.add_argument('--bert801010_masking', action='store_true')
     parser.add_argument('--mask_val', type=float, default=-1)

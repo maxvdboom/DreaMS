@@ -208,6 +208,24 @@ def maccs_fp(mol, as_numpy=True):
     return fp
 
 
+_MAP4_CALCULATORS = {}
+
+
+def map4_fp(mol, fp_size=2048):
+    if fp_size not in _MAP4_CALCULATORS:
+        try:
+            from map4 import MAP4
+        except ImportError as e:
+            raise ImportError(
+                'MAP4 fingerprint requested but `map4` package is not installed. '
+                'Install with `pip install map4`.'
+            ) from e
+        _MAP4_CALCULATORS[fp_size] = MAP4(dimensions=fp_size, radius=2, include_duplicated_shingles=False)
+
+    fp = _MAP4_CALCULATORS[fp_size].calculate(mol)
+    return np.asarray(fp, dtype=np.float32)
+
+
 def fp_func_from_str(s):
     """
     :param s: E.g. "fp_rdkit_2048", "fp_rdkit_2048" or "fp_maccs_166".
@@ -220,6 +238,8 @@ def fp_func_from_str(s):
         return lambda mol: morgan_fp(mol, fp_size=n_bits).astype(float, copy=False)
     elif fp_type == 'maccs':
         return lambda mol: maccs_fp(mol).astype(float, copy=False)
+    elif fp_type == 'map4':
+        return lambda mol: map4_fp(mol, fp_size=n_bits).astype(float, copy=False)
     else:
         raise ValueError(f'Invalid fingerprint function name: "{s}".')
 
