@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+# BASE FINE-TUNING SCRIPT — all variant scripts (maccs, map4, bce, etc.)
+# set environment variables and then `exec bash` into this script.
+#
+# Configurable via environment variables:
+#   FP_OBJECTIVE   — fingerprint target  (default: fp_morgan_2048)
+#   FP_LOSS        — loss function        (default: cos)
+#   PROJECT_NAME   — WandB project name   (default: derived from FP_OBJECTIVE)
+#   FP_POS_WEIGHT  — BCE positive-class weight (optional, only for bce_logits)
+#   RUN_NAME       — override run name    (default: auto-generated)
+#
 #SBATCH --job-name=DreaMS_fine-tuning
 #SBATCH --partition=gpu_h100
 #SBATCH --nodes=1
@@ -6,47 +17,49 @@
 #SBATCH --cpus-per-task=64
 #SBATCH --time=20:00:00
 
-# Loading modules
+# ── Modules & conda ──────────────────────────────────────────────────
 module load 2024
 module load Miniconda3/24.7.1-0
 
-# Activate conda environment
 eval "$(conda shell.bash hook)"
 conda activate dreams
 
-# Export project definitions
+# Export project definitions (PRETRAINED, MERGED_DATASETS, etc.)
 $(python -c "from dreams.definitions import export; export()")
 
-# Set up scratch directory
-SCRATCH_DIR="/scratch-shared/$USER/dreams_finetune_$$"
-HOME_OUTPUT_DIR="$HOME/DreaMS/dreams-thesis-wa/results/finetuning"
+# ── Configuration ────────────────────────────────────────────────────
+FP_OBJECTIVE=${FP_OBJECTIVE:-fp_morgan_2048}
+FP_LOSS=${FP_LOSS:-cos}
+PROJECT_NAME=${PROJECT_NAME:-MassSpecGym_${FP_OBJECTIVE}}
+WANDB_PROJECT=${WANDB_PROJECT:-$PROJECT_NAME}
 
-echo "Setting up scratch-shared workspace..."
+# Unique, descriptive run name: <objective>_<loss>_<timestamp>
+RUN_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+RUN_NAME=${RUN_NAME:-${FP_OBJECTIVE}_${FP_LOSS}_${RUN_TIMESTAMP}}
+
+# ── Scratch workspace (fast NVMe on compute node) ───────────────────
+SCRATCH_DIR="/scratch-shared/$USER/dreams_finetune_${RUN_NAME}"
+
+echo "Setting up scratch-shared workspace: $SCRATCH_DIR"
 mkdir -p "$SCRATCH_DIR"
-mkdir -p "$HOME_OUTPUT_DIR"
 
-# Copy input files to scratch (dataset + pre-trained model)
 echo "Copying dataset to scratch..."
 cp "$HOME/DreaMS/dreams-thesis-wa/data/processed/finetuning.hdf5" "$SCRATCH_DIR/"
 echo "Copying pre-trained model to scratch..."
 cp "${PRETRAINED}/ssl_model.ckpt" "$SCRATCH_DIR/"
 
-# Set paths to scratch locations
 SCRATCH_DATASET="$SCRATCH_DIR/finetuning.hdf5"
 SCRATCH_PRETRAINED="$SCRATCH_DIR/ssl_model.ckpt"
-SCRATCH_CHECKPOINTS="$SCRATCH_DIR/checkpoints"
-mkdir -p "$SCRATCH_CHECKPOINTS"
+echo "✅ Scratch setup complete"
 
-echo "✅ Scratch setup complete: $SCRATCH_DIR"
+# ── Per-run output directory on $HOME (persistent) ──────────────────
+# Structure: results/finetuning/<RUN_NAME>/
+#   ├── checkpoints/ (*.ckpt files)
+#   └── <RUN_NAME>_checkpoints.zip
+HOME_RUN_DIR="$HOME/DreaMS/dreams-thesis-wa/results/finetuning/$RUN_NAME"
+mkdir -p "$HOME_RUN_DIR"
 
-# Configuration
-PROJECT_NAME="MassSpecGym_Morgan2048"
-RUN_NAME="massspecgym_morgan2048_finetune_$(date +%Y%m%d_%H%M%S)"
-DATASET_PATH="$SCRATCH_DATASET"
-
-# WandB configuration
-# Credentials are stored in .wandb_secrets (gitignored)gi
-# See .wandb_secrets.template for setup instructions
+# ── WandB credentials ───────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/.wandb_secrets" ]; then
     source "$SCRIPT_DIR/.wandb_secrets"
@@ -59,59 +72,66 @@ elif [ -z "$WANDB_API_KEY" ]; then
     echo "   Create .wandb_secrets from .wandb_secrets.template"
     echo "   Or set WANDB_API_KEY environment variable"
 fi
-WANDB_PROJECT="MorganFingerprints"  # Your WandB project name
 
-# Check if dataset exists
-if [ ! -f "$DATASET_PATH" ]; then
-    echo "Error: Dataset not found at $DATASET_PATH"
+# ── Optional BCE pos_weight ──────────────────────────────────────────
+FP_POS_WEIGHT=${FP_POS_WEIGHT:-}
+FP_POS_WEIGHT_ARGS=""
+if [ -n "$FP_POS_WEIGHT" ]; then
+    FP_POS_WEIGHT_ARGS="--fp_pos_weight $FP_POS_WEIGHT"
+fi
+
+# ── Validation ───────────────────────────────────────────────────────
+if [ ! -f "$SCRATCH_DATASET" ]; then
+    echo "Error: Dataset not found at $SCRATCH_DATASET"
     echo "Please run: python dreams-thesis-wa/src/prepare_massspecgym_for_finetuning.py"
     exit 1
 fi
 
-# Check if pre-trained model exists
-if [ ! -f "${PRETRAINED}/ssl_model.ckpt" ]; then
-    echo "Error: Pre-trained model not found at ${PRETRAINED}/ssl_model.ckpt"
-    echo "Please set PRETRAINED environment variable to your pre-trained model directory"
+if [ ! -f "$SCRATCH_PRETRAINED" ]; then
+    echo "Error: Pre-trained model not found. Check \$PRETRAINED variable."
     exit 1
 fi
 
+echo ""
 echo "=================================="
 echo "MassSpecGym Fine-Tuning"
 echo "=================================="
-echo "Project: $PROJECT_NAME"
-echo "Run: $RUN_NAME"
-echo "Dataset: $DATASET_PATH"
-echo "Objective: Morgan Fingerprints (2048-bit)"
-echo "Pre-trained model: ${PRETRAINED}/ssl_model.ckpt"
-echo "WandB Project: $WANDB_PROJECT"
+echo "  Objective   : $FP_OBJECTIVE"
+echo "  Loss        : $FP_LOSS"
+echo "  Pos weight  : ${FP_POS_WEIGHT:-none}"
+echo "  Project     : $WANDB_PROJECT"
+echo "  Run name    : $RUN_NAME"
+echo "  Dataset     : $SCRATCH_DATASET"
+echo "  Pre-trained : $SCRATCH_PRETRAINED"
+echo "  Output dir  : $HOME_RUN_DIR"
 echo "=================================="
 echo ""
 
-# Build WandB arguments
+# ── WandB arguments ──────────────────────────────────────────────────
 WANDB_ARGS=""
-if [ ! -z "$WANDB_PROJECT" ] && [ "$WANDB_PROJECT" != "your-wandb-project-name" ]; then
+if [ -n "$WANDB_PROJECT" ] && [ "$WANDB_PROJECT" != "your-wandb-project-name" ]; then
     WANDB_ARGS="--project_name $WANDB_PROJECT --wandb_entity_name $WANDB_ENTITY"
     echo "WandB logging enabled"
 else
     WANDB_ARGS="--no_wandb"
-    echo "WandB logging disabled (set WANDB_PROJECT to enable)"
+    echo "WandB logging disabled"
 fi
 echo ""
 
-# Move to scratch directory so checkpoints are written to fast storage
+# ── Run training ─────────────────────────────────────────────────────
+# cd to scratch so Lightning writes checkpoints to fast storage
 cd "$SCRATCH_DIR" || exit 3
-
-# We need the DreaMS package, so add it to PYTHONPATH
 export PYTHONPATH="$HOME/DreaMS:$PYTHONPATH"
 
-# Run the training script with srun for SLURM
 srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py" \
  $WANDB_ARGS \
  --job_key "$RUN_NAME" \
  --run_name "$RUN_NAME" \
- --train_objective fp_morgan_2048 \
+ --train_objective "$FP_OBJECTIVE" \
+ --fp_loss "$FP_LOSS" \
+ $FP_POS_WEIGHT_ARGS \
  --train_regime fine-tuning \
- --dataset_pth "$DATASET_PATH" \
+ --dataset_pth "$SCRATCH_DATASET" \
  --dformat A \
  --model DreaMS \
  --lr 1.5e-5 \
@@ -127,64 +147,37 @@ srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py"
  --val_check_interval 0.5 \
  --max_peaks_n 100 \
  --save_top_k 3 \
- --num_workers 32 \
+ --num_workers_data 32 \
  --early_stopping_patience 20
 
-
-# Zipping checkpoints and copying to home
-# Checkpoints are saved to {project_name}/{job_key}/ in the working directory (scratch)
+# ── Copy checkpoints from scratch → $HOME per-run directory ─────────
+# Lightning saves to: <cwd>/<project_name>/<job_key>/
 CHECKPOINT_DIR="$SCRATCH_DIR/$WANDB_PROJECT/$RUN_NAME"
 echo ""
-echo "Zipping checkpoints from $CHECKPOINT_DIR..."
+echo "Collecting output from $CHECKPOINT_DIR ..."
 if [ -d "$CHECKPOINT_DIR" ]; then
+    # Copy individual checkpoint files
+    cp -r "$CHECKPOINT_DIR"/* "$HOME_RUN_DIR/"
+    echo "✅ Checkpoints copied to: $HOME_RUN_DIR"
+
+    # Also create a zip archive for easy transfer
     cd "$SCRATCH_DIR"
     zip -r "${RUN_NAME}_checkpoints.zip" "$WANDB_PROJECT/$RUN_NAME/"
-    echo "✅ Created ${RUN_NAME}_checkpoints.zip"
-    
-    echo "Copying zip to home directory..."
-    mv "${RUN_NAME}_checkpoints.zip" "$HOME_OUTPUT_DIR/"
-    echo "✅ Checkpoints saved to: $HOME_OUTPUT_DIR/${RUN_NAME}_checkpoints.zip"
+    mv "${RUN_NAME}_checkpoints.zip" "$HOME_RUN_DIR/"
+    echo "✅ Archive created: $HOME_RUN_DIR/${RUN_NAME}_checkpoints.zip"
 else
-    echo "⚠️ Warning: Checkpoint directory not found at $CHECKPOINT_DIR"
-    echo "   Listing scratch contents:"
-    ls -la "$SCRATCH_DIR"
+    echo "⚠️  Checkpoint directory not found at $CHECKPOINT_DIR"
+    echo "   Listing scratch contents for debugging:"
+    find "$SCRATCH_DIR" -maxdepth 3 -type d
 fi
 
-# Clean up scratch
-echo "Cleaning up scratch directory..."
+# ── Cleanup ──────────────────────────────────────────────────────────
+echo "Cleaning up scratch..."
 rm -rf "$SCRATCH_DIR"
 echo "✅ Scratch cleaned up"
 
 echo ""
 echo "=================================="
 echo "Fine-tuning complete!"
-echo "Output: $HOME_OUTPUT_DIR/${RUN_NAME}_checkpoints.zip"
+echo "All output saved to: $HOME_RUN_DIR"
 echo "=================================="
-
-# Contrastive fine-tuning (commented out)
-# python3 training/train.py \
-#  --project_name CONTRASTIVE_FINE_TUNING \
-#  --job_key "lr5e-6_margin0.1_fixed_rel_intens_max_peaks_n100" \
-#  --run_name "lr5e-6_margin0.1_fixed_rel_intens_max_peaks_n100" \
-#  --train_objective contrastive_spec_embs \
-#  --train_regime fine-tuning \
-#  --dformat A \
-#  --model DreaMS \
-#  --lr 5e-6 \
-#  --batch_size 4 \
-#  --prec_intens 1.1 \
-#  --num_devices 8 \
-#  --max_epochs 301 \
-#  --log_every_n_steps 5 \
-#  --seed 3407 \
-#  --train_precision 32 \
-#  --val_check_interval 1.0 \
-#  --save_top_k -1 \
-#  --head_depth 0 \
-#  --unfreeze_backbone_at_epoch 0 \
-#  --dataset_pth "${MERGED_DATASETS}/MoNA_A_Murcko_split_neighbours_[M+H]+_0.05Da.pkl" \
-#  --pre_trained_pth "${PRETRAINED}/ssl_model.ckpt" \
-#  --n_pos_samples 1 \
-#  --n_neg_samples 1 \
-#  --triplet_loss_margin 0.1 \
-#  --max_peaks_n 100
