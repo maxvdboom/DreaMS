@@ -11,5 +11,4 @@ export FP_OBJECTIVE=fp_maccs_166
 export FP_LOSS=cos
 export PROJECT_NAME=MassSpecGym_MACCS166
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$SCRIPT_DIR/fine_tune_test.sh"
+exec bash "$HOME/DreaMS/dreams-thesis-wa/scripts/fine_tune_test.sh"

@@ -14,5 +14,4 @@ export FP_LOSS=bce_logits
 export PROJECT_NAME=MassSpecGym_MAP4_2048_BCE
 # export FP_POS_WEIGHT=44  # Uncomment for pos_weight
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$SCRIPT_DIR/fine_tune_test.sh"
+exec bash "$HOME/DreaMS/dreams-thesis-wa/scripts/fine_tune_test.sh"

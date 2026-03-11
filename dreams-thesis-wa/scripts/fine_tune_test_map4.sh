@@ -15,5 +15,4 @@ export FP_OBJECTIVE=fp_map4_2048
 export FP_LOSS=cos
 export PROJECT_NAME=MassSpecGym_MAP4_2048
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$SCRIPT_DIR/fine_tune_test.sh"
+exec bash "$HOME/DreaMS/dreams-thesis-wa/scripts/fine_tune_test.sh"

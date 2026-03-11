@@ -12,5 +12,4 @@ export FP_LOSS=bce_logits
 export PROJECT_NAME=MassSpecGym_MACCS166_BCE
 # export FP_POS_WEIGHT=6  # Uncomment for pos_weight (MACCS ~15% density)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$SCRIPT_DIR/fine_tune_test.sh"
+exec bash "$HOME/DreaMS/dreams-thesis-wa/scripts/fine_tune_test.sh"
