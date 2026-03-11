@@ -9,6 +9,5 @@
 # MACCS 166 + cosine loss
 export FP_OBJECTIVE=fp_maccs_166
 export FP_LOSS=cos
-export PROJECT_NAME=MassSpecGym_MACCS166
 
 exec bash "$HOME/DreaMS/dreams-thesis-wa/scripts/fine_tune_test.sh"

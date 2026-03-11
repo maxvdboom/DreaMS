@@ -13,6 +13,5 @@
 #         python dreams-thesis-wa/src/add_map4_fingerprints.py data/processed/finetuning.hdf5
 export FP_OBJECTIVE=fp_map4_2048
 export FP_LOSS=cos
-export PROJECT_NAME=MassSpecGym_MAP4_2048
 
 exec bash "$HOME/DreaMS/dreams-thesis-wa/scripts/fine_tune_test.sh"

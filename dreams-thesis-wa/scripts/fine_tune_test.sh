@@ -30,7 +30,7 @@ $(python -c "from dreams.definitions import export; export()")
 # ── Configuration ────────────────────────────────────────────────────
 FP_OBJECTIVE=${FP_OBJECTIVE:-fp_morgan_2048}
 FP_LOSS=${FP_LOSS:-cos}
-PROJECT_NAME=${PROJECT_NAME:-MassSpecGym_${FP_OBJECTIVE}}
+PROJECT_NAME=${PROJECT_NAME:-DreaMS_Finetuning}
 WANDB_PROJECT=${WANDB_PROJECT:-$PROJECT_NAME}
 
 # Unique, descriptive run name: <objective>_<loss>_<timestamp>

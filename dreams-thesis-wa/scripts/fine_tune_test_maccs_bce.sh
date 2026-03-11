@@ -9,7 +9,6 @@
 # MACCS 166 + BCE loss
 export FP_OBJECTIVE=fp_maccs_166
 export FP_LOSS=bce_logits
-export PROJECT_NAME=MassSpecGym_MACCS166_BCE
 # export FP_POS_WEIGHT=6  # Uncomment for pos_weight (MACCS ~15% density)
 
 exec bash "$HOME/DreaMS/dreams-thesis-wa/scripts/fine_tune_test.sh"

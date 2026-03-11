@@ -11,7 +11,6 @@
 #       See fine_tune_test_map4.sh for precompute instructions.
 export FP_OBJECTIVE=fp_map4_2048
 export FP_LOSS=bce_logits
-export PROJECT_NAME=MassSpecGym_MAP4_2048_BCE
 # export FP_POS_WEIGHT=44  # Uncomment for pos_weight
 
 exec bash "$HOME/DreaMS/dreams-thesis-wa/scripts/fine_tune_test.sh"
