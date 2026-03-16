@@ -253,12 +253,30 @@ def main(args):
             wandb_logger = None
 
         # Define trainer callbacks (TODO: understand the behavior of find_unused_parameters)
+        checkpoint_kwargs = dict(
+            save_top_k=args.save_top_k,
+            mode='min',
+            dirpath=run_dir,
+            save_last=True
+        )
+        if args.train_regime == 'fine-tuning':
+            # Select best fine-tuning checkpoint by validation loss.
+            checkpoint_callback = pl.callbacks.ModelCheckpoint(
+                monitor='Val loss',
+                filename='epoch={epoch}-step={step}-val_loss={Val loss:.6f}',
+                auto_insert_metric_name=False,
+                **checkpoint_kwargs
+            )
+        else:
+            checkpoint_callback = pl.callbacks.ModelCheckpoint(
+                monitor='Train loss',
+                every_n_train_steps=1000,
+                **checkpoint_kwargs
+            )
+
         callbacks = [
             LearningRateMonitor(logging_interval='step'),
-            pl.callbacks.ModelCheckpoint(
-                monitor='Train loss', save_top_k=args.save_top_k, mode='min',
-                dirpath=run_dir, save_last=True, every_n_train_steps=1000
-            )
+            checkpoint_callback
         ]
         
         # Add early stopping if enabled (for fine-tuning only, not pre-training)
