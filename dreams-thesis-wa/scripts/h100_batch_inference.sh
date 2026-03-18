@@ -34,6 +34,11 @@ SCRIPT_PATH="$REPO_ROOT/dreams-thesis-wa/scripts/h100_batch_inference.py"
 PERSISTENT_CKPT_BASE_DIR="${CKPT_BASE_DIR:-}"
 PERSISTENT_OUTPUT_ROOT="${OUTPUT_ROOT:-$REPO_ROOT/dreams-thesis-wa/results/model_runs}"
 
+# Optional explicit dataset overrides:
+#   sbatch --export=PROBING_TEST_PATH=/path/probing_test.parquet,FINETUNING_HDF5_PATH=/path/finetuning.hdf5 ...
+PROBING_TEST_PATH="${PROBING_TEST_PATH:-}"
+FINETUNING_HDF5_PATH="${FINETUNING_HDF5_PATH:-}"
+
 # Fast node-local/shared scratch
 RUN_LABEL="${RUN_LABEL:-all6}"
 SCRATCH_ROOT="/scratch-shared/$USER/dreams_axis2_infer_${RUN_LABEL}_${SLURM_JOB_ID}"
@@ -81,12 +86,56 @@ fi
 
 echo "Checkpoint source resolved to: $PERSISTENT_CKPT_BASE_DIR"
 
+# Auto-detect dataset paths if not explicitly provided.
+if [ -z "$PROBING_TEST_PATH" ]; then
+  for candidate in \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/probing_test.parquet" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/probing_test.parquet"; do
+    if [ -f "$candidate" ]; then
+      PROBING_TEST_PATH="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$FINETUNING_HDF5_PATH" ]; then
+  for candidate in \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/finetuning.hdf5" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/finetuning.hdf5"; do
+    if [ -f "$candidate" ]; then
+      FINETUNING_HDF5_PATH="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$PROBING_TEST_PATH" ] || [ ! -f "$PROBING_TEST_PATH" ]; then
+  echo "Error: probing_test.parquet not found."
+  echo "Looked in:"
+  echo "  $REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/probing_test.parquet"
+  echo "  $REPO_ROOT/dreams-thesis-wa/data/processed/probing_test.parquet"
+  echo "Set explicit path with PROBING_TEST_PATH."
+  exit 1
+fi
+
+if [ -z "$FINETUNING_HDF5_PATH" ] || [ ! -f "$FINETUNING_HDF5_PATH" ]; then
+  echo "Error: finetuning.hdf5 not found."
+  echo "Looked in:"
+  echo "  $REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/finetuning.hdf5"
+  echo "  $REPO_ROOT/dreams-thesis-wa/data/processed/finetuning.hdf5"
+  echo "Set explicit path with FINETUNING_HDF5_PATH."
+  exit 1
+fi
+
+echo "Probing dataset resolved to: $PROBING_TEST_PATH"
+echo "Finetuning dataset resolved to: $FINETUNING_HDF5_PATH"
+
 # ------------------------------------------------------------------
 # Stage inputs to scratch
 # ------------------------------------------------------------------
 echo "Copying datasets to scratch..."
-cp "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/probing_test.parquet" "$SCRATCH_DATA_DIR/"
-cp "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/finetuning.hdf5" "$SCRATCH_DATA_DIR/"
+cp "$PROBING_TEST_PATH" "$SCRATCH_DATA_DIR/probing_test.parquet"
+cp "$FINETUNING_HDF5_PATH" "$SCRATCH_DATA_DIR/finetuning.hdf5"
 
 echo "Copying checkpoints to scratch (recursive)..."
 rsync -a \
