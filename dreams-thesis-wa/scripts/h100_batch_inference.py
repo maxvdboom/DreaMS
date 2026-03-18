@@ -223,6 +223,20 @@ def parse_val_loss_from_name(path: Path) -> float | None:
 
 def discover_checkpoint_for_spec(ckpt_base_dir: Path, spec: dict) -> Path:
     """Find best checkpoint for a spec by searching recursively in nested run folders."""
+    ckpt_file = spec.get("ckpt_file")
+    if ckpt_file:
+        exact = [p for p in ckpt_base_dir.rglob(ckpt_file) if p.is_file()]
+        if len(exact) == 1:
+            return exact[0]
+        if len(exact) > 1:
+            with_loss = [(parse_val_loss_from_name(p), p) for p in exact]
+            with_loss = [(vl, p) for vl, p in with_loss if vl is not None]
+            if with_loss:
+                with_loss.sort(key=lambda x: x[0])
+                return with_loss[0][1]
+            exact.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            return exact[0]
+
     fp_objective = f"fp_{spec['fp_kind']}".lower()
     loss_token = "bce_logits" if spec["loss_kind"] == "bce" else "cos"
 

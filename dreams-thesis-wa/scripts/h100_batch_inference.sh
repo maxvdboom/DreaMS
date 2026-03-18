@@ -45,6 +45,7 @@ SCRATCH_ROOT="/scratch-shared/$USER/dreams_axis2_infer_${RUN_LABEL}_${SLURM_JOB_
 SCRATCH_DATA_DIR="$SCRATCH_ROOT/data"
 SCRATCH_CKPT_DIR="$SCRATCH_ROOT/checkpoints"
 SCRATCH_OUTPUT_ROOT="$SCRATCH_ROOT/model_runs"
+COPY_CKPTS_TO_SCRATCH="${COPY_CKPTS_TO_SCRATCH:-0}"
 
 mkdir -p "$SCRATCH_DATA_DIR" "$SCRATCH_CKPT_DIR" "$SCRATCH_OUTPUT_ROOT" "$PERSISTENT_OUTPUT_ROOT"
 
@@ -137,30 +138,36 @@ echo "Copying datasets to scratch..."
 cp "$PROBING_TEST_PATH" "$SCRATCH_DATA_DIR/probing_test.parquet"
 cp "$FINETUNING_HDF5_PATH" "$SCRATCH_DATA_DIR/finetuning.hdf5"
 
-echo "Copying checkpoints to scratch (recursive)..."
-rsync -a \
-  --include='*/' \
-  --include='*.ckpt' \
-  --exclude='*' \
-  "$PERSISTENT_CKPT_BASE_DIR/" "$SCRATCH_CKPT_DIR/"
+if [ "$COPY_CKPTS_TO_SCRATCH" = "1" ]; then
+  echo "Copying checkpoints to scratch (recursive)..."
+  rsync -a \
+    --include='*/' \
+    --include='*.ckpt' \
+    --exclude='*' \
+    "$PERSISTENT_CKPT_BASE_DIR/" "$SCRATCH_CKPT_DIR/"
 
-CKPT_COUNT=$(find "$SCRATCH_CKPT_DIR" -type f -name "*.ckpt" | wc -l | tr -d ' ')
-if [ "$CKPT_COUNT" -eq 0 ]; then
-  echo "Error: no .ckpt files found under $PERSISTENT_CKPT_BASE_DIR"
-  exit 1
+  CKPT_COUNT=$(find "$SCRATCH_CKPT_DIR" -type f -name "*.ckpt" | wc -l | tr -d ' ')
+  if [ "$CKPT_COUNT" -eq 0 ]; then
+    echo "Error: no .ckpt files found under $PERSISTENT_CKPT_BASE_DIR"
+    exit 1
+  fi
+  CKPT_SEARCH_DIR="$SCRATCH_CKPT_DIR"
+  echo "Copied $CKPT_COUNT checkpoint files to scratch."
+else
+  CKPT_SEARCH_DIR="$PERSISTENT_CKPT_BASE_DIR"
+  echo "Using checkpoint source in place (no scratch copy): $CKPT_SEARCH_DIR"
 fi
-echo "Copied $CKPT_COUNT checkpoint files to scratch."
 
 # ------------------------------------------------------------------
 # Run inference from scratch
 # ------------------------------------------------------------------
-export PYTHONPATH="$REPO_ROOT:$PYTHONPATH"
+export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
 cd "$SCRATCH_ROOT"
 
 srun --export=ALL --preserve-env python "$SCRIPT_PATH" \
   --device cuda \
   --batch-size 1024 \
-  --ckpt-base-dir "$SCRATCH_CKPT_DIR" \
+  --ckpt-base-dir "$CKPT_SEARCH_DIR" \
   --probing-test "$SCRATCH_DATA_DIR/probing_test.parquet" \
   --finetuning-hdf5 "$SCRATCH_DATA_DIR/finetuning.hdf5" \
   --output-root "$SCRATCH_OUTPUT_ROOT" \
