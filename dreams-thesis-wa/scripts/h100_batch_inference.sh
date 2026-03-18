@@ -31,7 +31,7 @@ REPO_ROOT="$HOME/DreaMS"
 SCRIPT_PATH="$REPO_ROOT/dreams-thesis-wa/scripts/h100_batch_inference.py"
 
 # Persistent storage on cluster ($HOME)
-PERSISTENT_CKPT_BASE_DIR="${CKPT_BASE_DIR:-$HOME/THESIS/model_checkpoints}"
+PERSISTENT_CKPT_BASE_DIR="${CKPT_BASE_DIR:-}"
 PERSISTENT_OUTPUT_ROOT="${OUTPUT_ROOT:-$REPO_ROOT/dreams-thesis-wa/results/model_runs}"
 
 # Fast node-local/shared scratch
@@ -60,8 +60,23 @@ if [ ! -f "$SCRIPT_PATH" ]; then
   exit 1
 fi
 
-if [ ! -d "$PERSISTENT_CKPT_BASE_DIR" ]; then
-  echo "Error: checkpoint base dir not found at $PERSISTENT_CKPT_BASE_DIR"
+# Auto-detect checkpoint root if not explicitly provided.
+if [ -z "$PERSISTENT_CKPT_BASE_DIR" ]; then
+  for candidate in \
+    "$HOME/THESIS/model_checkpoints" \
+    "$HOME/DreaMS/dreams-thesis-wa/results/finetuning" \
+    "$HOME/dreams-thesis-wa/results/finetuning"; do
+    if [ -d "$candidate" ]; then
+      PERSISTENT_CKPT_BASE_DIR="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$PERSISTENT_CKPT_BASE_DIR" ] || [ ! -d "$PERSISTENT_CKPT_BASE_DIR" ]; then
+  echo "Error: checkpoint base dir not found."
+  echo "Set it explicitly, e.g.:"
+  echo "  sbatch --export=CKPT_BASE_DIR=/path/to/checkpoints dreams-thesis-wa/scripts/h100_batch_inference.sh"
   exit 1
 fi
 
@@ -72,8 +87,15 @@ echo "Copying datasets to scratch..."
 cp "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/probing_test.parquet" "$SCRATCH_DATA_DIR/"
 cp "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/finetuning.hdf5" "$SCRATCH_DATA_DIR/"
 
-echo "Copying checkpoints to scratch..."
-cp "$PERSISTENT_CKPT_BASE_DIR"/*.ckpt "$SCRATCH_CKPT_DIR/"
+echo "Copying checkpoints to scratch (recursive)..."
+find "$PERSISTENT_CKPT_BASE_DIR" -type f -name "*.ckpt" -print0 | xargs -0 -I{} cp "{}" "$SCRATCH_CKPT_DIR/"
+
+CKPT_COUNT=$(find "$SCRATCH_CKPT_DIR" -type f -name "*.ckpt" | wc -l | tr -d ' ')
+if [ "$CKPT_COUNT" -eq 0 ]; then
+  echo "Error: no .ckpt files found under $PERSISTENT_CKPT_BASE_DIR"
+  exit 1
+fi
+echo "Copied $CKPT_COUNT checkpoint files to scratch."
 
 # ------------------------------------------------------------------
 # Run inference from scratch
