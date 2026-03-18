@@ -49,7 +49,6 @@ echo "DreaMS Axis2 H100 Inference"
 echo "=================================="
 echo "  Repo root            : $REPO_ROOT"
 echo "  Script               : $SCRIPT_PATH"
-echo "  Checkpoints (source) : $PERSISTENT_CKPT_BASE_DIR"
 echo "  Persistent output    : $PERSISTENT_OUTPUT_ROOT"
 echo "  Scratch root         : $SCRATCH_ROOT"
 echo "=================================="
@@ -80,6 +79,8 @@ if [ -z "$PERSISTENT_CKPT_BASE_DIR" ] || [ ! -d "$PERSISTENT_CKPT_BASE_DIR" ]; t
   exit 1
 fi
 
+echo "Checkpoint source resolved to: $PERSISTENT_CKPT_BASE_DIR"
+
 # ------------------------------------------------------------------
 # Stage inputs to scratch
 # ------------------------------------------------------------------
@@ -88,7 +89,11 @@ cp "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/probing_test.p
 cp "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/finetuning.hdf5" "$SCRATCH_DATA_DIR/"
 
 echo "Copying checkpoints to scratch (recursive)..."
-find "$PERSISTENT_CKPT_BASE_DIR" -type f -name "*.ckpt" -print0 | xargs -0 -I{} cp "{}" "$SCRATCH_CKPT_DIR/"
+rsync -a \
+  --include='*/' \
+  --include='*.ckpt' \
+  --exclude='*' \
+  "$PERSISTENT_CKPT_BASE_DIR/" "$SCRATCH_CKPT_DIR/"
 
 CKPT_COUNT=$(find "$SCRATCH_CKPT_DIR" -type f -name "*.ckpt" | wc -l | tr -d ' ')
 if [ "$CKPT_COUNT" -eq 0 ]; then

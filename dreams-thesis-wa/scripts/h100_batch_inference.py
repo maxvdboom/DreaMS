@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import shutil
 import sys
 import time
@@ -202,12 +203,62 @@ def load_specs(specs_json: Path | None) -> list[dict]:
     if not isinstance(specs, list):
         raise ValueError("specs-json must contain a JSON list.")
 
-    required = {"run_tag", "fp_kind", "loss_kind", "ckpt_file", "apply_sigmoid_to_pred"}
+    required = {"run_tag", "fp_kind", "loss_kind", "apply_sigmoid_to_pred"}
     for s in specs:
         missing = required - set(s.keys())
         if missing:
             raise ValueError(f"Spec missing keys {missing}: {s}")
     return specs
+
+
+def parse_val_loss_from_name(path: Path) -> float | None:
+    m = re.search(r"val_loss=([0-9]*\.?[0-9]+)", path.name)
+    if not m:
+        return None
+    try:
+        return float(m.group(1))
+    except ValueError:
+        return None
+
+
+def discover_checkpoint_for_spec(ckpt_base_dir: Path, spec: dict) -> Path:
+    """Find best checkpoint for a spec by searching recursively in nested run folders."""
+    fp_objective = f"fp_{spec['fp_kind']}".lower()
+    loss_token = "bce_logits" if spec["loss_kind"] == "bce" else "cos"
+
+    all_ckpts = [p for p in ckpt_base_dir.rglob("*.ckpt") if p.is_file()]
+    if not all_ckpts:
+        raise FileNotFoundError(f"No .ckpt files found under: {ckpt_base_dir}")
+
+    primary = []
+    fallback = []
+    for p in all_ckpts:
+        full = str(p).lower()
+        if fp_objective in full and loss_token in full:
+            primary.append(p)
+        elif fp_objective in full:
+            fallback.append(p)
+
+    candidates = primary if primary else fallback
+    if not candidates:
+        raise FileNotFoundError(
+            f"Could not find checkpoint for run_tag={spec['run_tag']} "
+            f"(expected tokens: {fp_objective}, {loss_token}) under {ckpt_base_dir}."
+        )
+
+    with_loss = [(parse_val_loss_from_name(p), p) for p in candidates]
+    with_loss = [(vl, p) for vl, p in with_loss if vl is not None]
+
+    if with_loss:
+        # Pick smallest validation loss among matching checkpoints.
+        with_loss.sort(key=lambda x: x[0])
+        return with_loss[0][1]
+
+    # Fallback: prefer non-last checkpoints, then latest mtime.
+    non_last = [p for p in candidates if p.name != "last.ckpt"]
+    pool = non_last if non_last else candidates
+    pool.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return pool[0]
 
 
 def load_model_compat(ckpt_path: Path, device: str) -> FingerprintHead:
@@ -306,9 +357,13 @@ def main() -> None:
 
     for idx, spec in enumerate(specs, start=1):
         run_tag = spec["run_tag"]
-        ckpt_path = args.ckpt_base_dir / spec["ckpt_file"]
-        if not ckpt_path.exists():
-            raise FileNotFoundError(f"Checkpoint not found for {run_tag}: {ckpt_path}")
+
+        ckpt_file = spec.get("ckpt_file")
+        ckpt_path = args.ckpt_base_dir / ckpt_file if ckpt_file else None
+
+        if ckpt_path is None or not ckpt_path.exists():
+            ckpt_path = discover_checkpoint_for_spec(args.ckpt_base_dir, spec)
+            print(f"Auto-resolved checkpoint for {run_tag}: {ckpt_path}")
 
         run_dir = args.output_root / run_tag
         checkpoints_dir = run_dir / "checkpoints"
