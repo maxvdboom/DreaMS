@@ -307,6 +307,7 @@ def infer_batches(
     batch_size: int,
     device: str,
     apply_sigmoid_to_pred: bool,
+    progress_desc: str,
 ) -> np.ndarray:
     outputs = []
 
@@ -314,7 +315,12 @@ def infer_batches(
     amp_dtype = torch.bfloat16 if use_amp else None
 
     with torch.inference_mode():
-        for start in tqdm(range(0, len(spectra_np), batch_size), desc="Inference", leave=False):
+        for start in tqdm(
+            range(0, len(spectra_np), batch_size),
+            desc=progress_desc,
+            leave=True,
+            dynamic_ncols=True,
+        ):
             end = min(start + batch_size, len(spectra_np))
             batch_spec = torch.tensor(spectra_np[start:end], dtype=torch.float32, device=device)
             batch_charge = torch.ones(end - start, dtype=torch.float32, device=device)
@@ -328,7 +334,8 @@ def infer_batches(
             if apply_sigmoid_to_pred:
                 pred = torch.sigmoid(pred)
 
-            outputs.append(pred.detach().cpu().numpy().astype(np.float32))
+            # torch.bfloat16 tensors cannot be converted to numpy directly.
+            outputs.append(pred.float().detach().cpu().numpy().astype(np.float32))
 
     return np.concatenate(outputs, axis=0)
 
@@ -369,7 +376,7 @@ def main() -> None:
 
     print(f"Running {len(specs)} checkpoint(s) on device={args.device}, batch_size={args.batch_size}")
 
-    for idx, spec in enumerate(specs, start=1):
+    for idx, spec in enumerate(tqdm(specs, desc="Model runs", dynamic_ncols=True), start=1):
         run_tag = spec["run_tag"]
 
         ckpt_file = spec.get("ckpt_file")
@@ -398,6 +405,7 @@ def main() -> None:
             batch_size=args.batch_size,
             device=args.device,
             apply_sigmoid_to_pred=bool(spec["apply_sigmoid_to_pred"]),
+            progress_desc=f"{run_tag} | OOD inference",
         )
         t1 = time.perf_counter()
         y_pred_val = infer_batches(
@@ -406,6 +414,7 @@ def main() -> None:
             batch_size=args.batch_size,
             device=args.device,
             apply_sigmoid_to_pred=bool(spec["apply_sigmoid_to_pred"]),
+            progress_desc=f"{run_tag} | VAL inference",
         )
         t2 = time.perf_counter()
 
