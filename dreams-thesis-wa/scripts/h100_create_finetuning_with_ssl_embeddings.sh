@@ -30,9 +30,9 @@ $(python -c "from dreams.definitions import export; export()")
 REPO_ROOT="${REPO_ROOT:-$HOME/DreaMS}"
 SCRIPT_PATH="$REPO_ROOT/dreams-thesis-wa/src/create_finetuning_with_ssl_embeddings.py"
 
-# User requested cluster location for input/output.
-INPUT_HDF5="${INPUT_HDF5:-/data/processed/finetuning.hdf5}"
-OUTPUT_HDF5="${OUTPUT_HDF5:-/data/processed/finetuning_with_ssl_embeddings.hdf5}"
+# Default input/output under repository data directory.
+INPUT_HDF5="${INPUT_HDF5:-$REPO_ROOT/dreams-thesis-wa/data/processed/finetuning.hdf5}"
+OUTPUT_HDF5="${OUTPUT_HDF5:-$REPO_ROOT/dreams-thesis-wa/data/processed/finetuning_with_ssl_embeddings.hdf5}"
 
 BATCH_SIZE="${BATCH_SIZE:-512}"
 N_HIGHEST_PEAKS="${N_HIGHEST_PEAKS:-100}"
@@ -92,4 +92,4 @@ echo "Output written to: $OUTPUT_HDF5"
 
 # Example usage:
 # sbatch dreams-thesis-wa/scripts/h100_create_finetuning_with_ssl_embeddings.sh
-# sbatch --export=INPUT_HDF5=/data/processed/finetuning.hdf5,OUTPUT_HDF5=/data/processed/finetuning_with_ssl_embeddings.hdf5,OVERWRITE=1 dreams-thesis-wa/scripts/h100_create_finetuning_with_ssl_embeddings.sh
+# sbatch --export=INPUT_HDF5=$HOME/DreaMS/dreams-thesis-wa/data/processed/finetuning.hdf5,OUTPUT_HDF5=$HOME/DreaMS/dreams-thesis-wa/data/processed/finetuning_with_ssl_embeddings.hdf5,OVERWRITE=1 dreams-thesis-wa/scripts/h100_create_finetuning_with_ssl_embeddings.sh
