@@ -47,6 +47,11 @@ resolve_first_existing_file () {
   return 1
 }
 
+FINETUNING_CANDIDATES="$PERSIST_DATA_DIR/finetuning.hdf5 | $REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/finetuning.hdf5 | $REPO_ROOT/dreams-thesis-wa/data/processed/finetuning.hdf5"
+WITH_SSL_CANDIDATES="$PERSIST_DATA_DIR/finetuning_with_ssl_embeddings.hdf5 | $REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/finetuning_with_ssl_embeddings.hdf5 | $REPO_ROOT/dreams-thesis-wa/data/processed/finetuning_with_ssl_embeddings.hdf5"
+PROBING_CANDIDATES="$PERSIST_DATA_DIR/probing_test.parquet | $REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/probing_test.parquet | $REPO_ROOT/dreams-thesis-wa/data/processed/probing_test.parquet"
+FP_CACHE_CANDIDATES="$PERSIST_DATA_DIR/fingerprint_cache.npz | $REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/fingerprint_cache.npz | $REPO_ROOT/dreams-thesis-wa/data/processed/fingerprint_cache.npz"
+
 if [ -z "${INPUT_FINETUNING_HDF5:-}" ]; then
   INPUT_FINETUNING_HDF5="$(resolve_first_existing_file \
     "$PERSIST_DATA_DIR/finetuning.hdf5" \
@@ -74,6 +79,26 @@ if [ -z "${INPUT_FP_CACHE:-}" ]; then
     "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/fingerprint_cache.npz" \
     "$REPO_ROOT/dreams-thesis-wa/data/processed/fingerprint_cache.npz" || true)"
 fi
+
+validate_input_file () {
+  local label="$1"
+  local path="$2"
+  local candidates="$3"
+
+  if [ -z "$path" ]; then
+    echo "Error: missing required input for $label."
+    echo "  Tried: $candidates"
+    return 1
+  fi
+
+  if [ ! -f "$path" ]; then
+    echo "Error: missing required input for $label: $path"
+    echo "  Tried: $candidates"
+    return 1
+  fi
+
+  return 0
+}
 
 # Runtime knobs
 EMB_BATCH_SIZE="${EMB_BATCH_SIZE:-256}"
@@ -116,12 +141,10 @@ echo ""
 # ------------------------------------------------------------------
 # Validate inputs
 # ------------------------------------------------------------------
-for p in "$INPUT_FINETUNING_HDF5" "$INPUT_FINETUNING_WITH_SSL_HDF5" "$INPUT_PROBING_TEST" "$INPUT_FP_CACHE"; do
-  if [ ! -f "$p" ]; then
-    echo "Error: missing required input: $p"
-    exit 1
-  fi
-done
+validate_input_file "finetuning.hdf5" "$INPUT_FINETUNING_HDF5" "$FINETUNING_CANDIDATES" || exit 1
+validate_input_file "finetuning_with_ssl_embeddings.hdf5" "$INPUT_FINETUNING_WITH_SSL_HDF5" "$WITH_SSL_CANDIDATES" || exit 1
+validate_input_file "probing_test.parquet" "$INPUT_PROBING_TEST" "$PROBING_CANDIDATES" || exit 1
+validate_input_file "fingerprint_cache.npz" "$INPUT_FP_CACHE" "$FP_CACHE_CANDIDATES" || exit 1
 
 if [ ! -f "$SRC_DIR/create_peak_embeddings.py" ] || [ ! -f "$SRC_DIR/frozen_allpeaks_baselines.py" ] || [ ! -f "$SRC_DIR/frozen_allpeaks_inference.py" ]; then
   echo "Error: required source scripts not found under $SRC_DIR"
