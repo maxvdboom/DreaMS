@@ -144,9 +144,19 @@ echo ""
 validate_input_file "finetuning.hdf5" "$INPUT_FINETUNING_HDF5" "$FINETUNING_CANDIDATES" || exit 1
 validate_input_file "finetuning_with_ssl_embeddings.hdf5" "$INPUT_FINETUNING_WITH_SSL_HDF5" "$WITH_SSL_CANDIDATES" || exit 1
 validate_input_file "probing_test.parquet" "$INPUT_PROBING_TEST" "$PROBING_CANDIDATES" || exit 1
-validate_input_file "fingerprint_cache.npz" "$INPUT_FP_CACHE" "$FP_CACHE_CANDIDATES" || exit 1
 
-if [ ! -f "$SRC_DIR/create_peak_embeddings.py" ] || [ ! -f "$SRC_DIR/frozen_allpeaks_baselines.py" ] || [ ! -f "$SRC_DIR/frozen_allpeaks_inference.py" ]; then
+if [ -n "${INPUT_FP_CACHE:-}" ] && [ ! -f "$INPUT_FP_CACHE" ]; then
+  echo "Warning: provided fingerprint cache path does not exist: $INPUT_FP_CACHE"
+  echo "Will auto-generate fingerprint_cache.npz from finetuning.hdf5"
+  INPUT_FP_CACHE=""
+fi
+
+if [ -z "${INPUT_FP_CACHE:-}" ]; then
+  echo "Fingerprint cache not found in default locations."
+  echo "Will auto-generate fingerprint_cache.npz from finetuning.hdf5"
+fi
+
+if [ ! -f "$SRC_DIR/create_peak_embeddings.py" ] || [ ! -f "$SRC_DIR/frozen_allpeaks_baselines.py" ] || [ ! -f "$SRC_DIR/frozen_allpeaks_inference.py" ] || [ ! -f "$SRC_DIR/create_fingerprint_cache.py" ]; then
   echo "Error: required source scripts not found under $SRC_DIR"
   exit 1
 fi
@@ -158,7 +168,15 @@ echo "Staging datasets to scratch..."
 cp "$INPUT_FINETUNING_HDF5" "$SCRATCH_DATA_DIR/finetuning.hdf5"
 cp "$INPUT_FINETUNING_WITH_SSL_HDF5" "$SCRATCH_DATA_DIR/finetuning_with_ssl_embeddings.hdf5"
 cp "$INPUT_PROBING_TEST" "$SCRATCH_DATA_DIR/probing_test.parquet"
-cp "$INPUT_FP_CACHE" "$SCRATCH_DATA_DIR/fingerprint_cache.npz"
+
+if [ -n "${INPUT_FP_CACHE:-}" ]; then
+  cp "$INPUT_FP_CACHE" "$SCRATCH_DATA_DIR/fingerprint_cache.npz"
+else
+  echo "Generating fingerprint cache on scratch..."
+  srun --export=ALL --preserve-env python "$SRC_DIR/create_fingerprint_cache.py" \
+    --finetuning-hdf5 "$SCRATCH_DATA_DIR/finetuning.hdf5" \
+    --output "$SCRATCH_DATA_DIR/fingerprint_cache.npz"
+fi
 
 export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
 cd "$REPO_ROOT"
