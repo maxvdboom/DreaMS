@@ -2,7 +2,7 @@
 #SBATCH --job-name=dreams-frozen-allpeaks
 #SBATCH --partition=gpu_h100
 #SBATCH --time=08:00:00
-#SBATCH --gpus=4
+#SBATCH --gpus=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=128G
 #SBATCH --output=slurm-%j.out
