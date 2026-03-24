@@ -2,7 +2,7 @@
 #SBATCH --job-name=dreams-frozen-allpeaks
 #SBATCH --partition=gpu_h100
 #SBATCH --time=08:00:00
-#SBATCH --gpus=1
+#SBATCH --gpus=4
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=128G
 #SBATCH --output=slurm-%j.out
@@ -32,15 +32,48 @@ SRC_DIR="$REPO_ROOT/dreams-thesis-wa/src"
 SCRIPTS_DIR="$REPO_ROOT/dreams-thesis-wa/scripts"
 
 # Persistent paths (home/project storage)
-PERSIST_DATA_DIR="${PERSIST_DATA_DIR:-$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits}"
+PERSIST_DATA_DIR="${PERSIST_DATA_DIR:-$REPO_ROOT/dreams-thesis-wa/data/processed}"
 PERSIST_RESULTS_MODEL_RUNS="${PERSIST_RESULTS_MODEL_RUNS:-$REPO_ROOT/dreams-thesis-wa/results/model_runs}"
 PERSIST_RESULTS_FROZEN_ALLPEAKS="${PERSIST_RESULTS_FROZEN_ALLPEAKS:-$REPO_ROOT/dreams-thesis-wa/results/frozen_allpeaks_baselines}"
 
 # Inputs
-INPUT_FINETUNING_HDF5="${INPUT_FINETUNING_HDF5:-$PERSIST_DATA_DIR/finetuning.hdf5}"
-INPUT_FINETUNING_WITH_SSL_HDF5="${INPUT_FINETUNING_WITH_SSL_HDF5:-$PERSIST_DATA_DIR/finetuning_with_ssl_embeddings.hdf5}"
-INPUT_PROBING_TEST="${INPUT_PROBING_TEST:-$PERSIST_DATA_DIR/probing_test.parquet}"
-INPUT_FP_CACHE="${INPUT_FP_CACHE:-$PERSIST_DATA_DIR/fingerprint_cache.npz}"
+resolve_first_existing_file () {
+  for candidate in "$@"; do
+    if [ -f "$candidate" ]; then
+      echo "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if [ -z "${INPUT_FINETUNING_HDF5:-}" ]; then
+  INPUT_FINETUNING_HDF5="$(resolve_first_existing_file \
+    "$PERSIST_DATA_DIR/finetuning.hdf5" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/finetuning.hdf5" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/finetuning.hdf5" || true)"
+fi
+
+if [ -z "${INPUT_FINETUNING_WITH_SSL_HDF5:-}" ]; then
+  INPUT_FINETUNING_WITH_SSL_HDF5="$(resolve_first_existing_file \
+    "$PERSIST_DATA_DIR/finetuning_with_ssl_embeddings.hdf5" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/finetuning_with_ssl_embeddings.hdf5" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/finetuning_with_ssl_embeddings.hdf5" || true)"
+fi
+
+if [ -z "${INPUT_PROBING_TEST:-}" ]; then
+  INPUT_PROBING_TEST="$(resolve_first_existing_file \
+    "$PERSIST_DATA_DIR/probing_test.parquet" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/probing_test.parquet" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/probing_test.parquet" || true)"
+fi
+
+if [ -z "${INPUT_FP_CACHE:-}" ]; then
+  INPUT_FP_CACHE="$(resolve_first_existing_file \
+    "$PERSIST_DATA_DIR/fingerprint_cache.npz" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/MassSpecGym_splits/fingerprint_cache.npz" \
+    "$REPO_ROOT/dreams-thesis-wa/data/processed/fingerprint_cache.npz" || true)"
+fi
 
 # Runtime knobs
 EMB_BATCH_SIZE="${EMB_BATCH_SIZE:-256}"
