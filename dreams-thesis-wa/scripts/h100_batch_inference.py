@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+I'#!/usr/bin/env python3
 """Run batch inference for Axis 2 artifacts on GPU clusters (e.g., H100).
 
 This script only computes and saves model predictions:
@@ -166,7 +166,7 @@ def ensure_spectrum_layout(spec: np.ndarray) -> np.ndarray:
     )
 
 
-def load_datasets(probing_test: Path, finetuning_hdf5: Path) -> tuple[np.ndarray, np.ndarray]:
+def load_datasets(probing_test: Path, finetuning_hdf5: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     print(f"Loading OOD data from: {probing_test}")
     df_ood = pd.read_parquet(probing_test)
     spec_ood = np.stack(
@@ -174,6 +174,13 @@ def load_datasets(probing_test: Path, finetuning_hdf5: Path) -> tuple[np.ndarray
         axis=0,
     )
     spec_ood = ensure_spectrum_layout(spec_ood)
+    
+    # Extract precursor_mz for OOD
+    prec_ood = np.full(len(df_ood), np.nan, dtype=np.float32)
+    for prec_col in ["precursor_mz", "PRECURSOR_MZ", "prec_mz", "PRECURSOR M/Z"]:
+        if prec_col in df_ood.columns:
+            prec_ood = df_ood[prec_col].values.astype(np.float32)
+            break
 
     print(f"Loading VAL data from: {finetuning_hdf5}")
     with h5py.File(finetuning_hdf5, "r") as f:
@@ -182,6 +189,11 @@ def load_datasets(probing_test: Path, finetuning_hdf5: Path) -> tuple[np.ndarray
             for x in f["fold"][:]
         ])
         spec_all = f["spectrum"][:].astype(np.float32)
+        
+        # Extract precursor_mz for VAL
+        prec_all = np.full(len(spec_all), np.nan, dtype=np.float32)
+        if "precursor_mz" in f:
+            prec_all = f["precursor_mz"][:].astype(np.float32)
 
     val_mask = fold == "val"
     if val_mask.sum() == 0:
@@ -189,10 +201,11 @@ def load_datasets(probing_test: Path, finetuning_hdf5: Path) -> tuple[np.ndarray
 
     spec_val = spec_all[val_mask]
     spec_val = ensure_spectrum_layout(spec_val)
+    prec_val = prec_all[val_mask]
 
-    print(f"OOD spectra: {spec_ood.shape}")
-    print(f"VAL spectra: {spec_val.shape}")
-    return spec_ood, spec_val
+    print(f"OOD spectra: {spec_ood.shape}, precursor_mz: {prec_ood.shape}")
+    print(f"VAL spectra: {spec_val.shape}, precursor_mz: {prec_val.shape}")
+    return spec_ood, spec_val, prec_ood, prec_val
 
 
 def load_specs(specs_json: Path | None) -> list[dict]:
@@ -308,11 +321,15 @@ def infer_batches(
     device: str,
     apply_sigmoid_to_pred: bool,
     progress_desc: str,
+    prec_mz_np: np.ndarray | None = None,
 ) -> np.ndarray:
     outputs = []
 
     use_amp = device == "cuda"
     amp_dtype = torch.bfloat16 if use_amp else None
+    
+    # Extract spec_preproc from model's backbone for preprocessing each spectrum
+    spec_preproc = getattr(getattr(model, "backbone", None), "spec_preproc", None)
 
     with torch.inference_mode():
         for start in tqdm(
@@ -322,7 +339,23 @@ def infer_batches(
             dynamic_ncols=True,
         ):
             end = min(start + batch_size, len(spectra_np))
-            batch_spec = torch.tensor(spectra_np[start:end], dtype=torch.float32, device=device)
+            batch_spec_raw = spectra_np[start:end]
+            
+            # Apply preprocessing to each spectrum if spec_preproc is available
+            batch_spec_proc = []
+            if spec_preproc is not None:
+                for i, spec in enumerate(batch_spec_raw):
+                    prec = None
+                    if prec_mz_np is not None and i < len(prec_mz_np):
+                        p = float(prec_mz_np[start + i])
+                        if np.isfinite(p):
+                            prec = p
+                    batch_spec_proc.append(spec_preproc(spec, prec_mz=prec, high_form="auto", augment=False))
+                batch_spec = torch.tensor(np.asarray(batch_spec_proc, dtype=np.float32), device=device)
+            else:
+                # Fallback: use raw spectra if spec_preproc not available (e.g., frozen models)
+                batch_spec = torch.tensor(batch_spec_raw, dtype=torch.float32, device=device)
+            
             batch_charge = torch.ones(end - start, dtype=torch.float32, device=device)
 
             if use_amp:
@@ -372,7 +405,7 @@ def main() -> None:
     if not specs:
         raise ValueError("No model specs selected.")
 
-    spec_ood, spec_val = load_datasets(args.probing_test, args.finetuning_hdf5)
+    spec_ood, spec_val, prec_ood, prec_val = load_datasets(args.probing_test, args.finetuning_hdf5)
 
     print(f"Running {len(specs)} checkpoint(s) on device={args.device}, batch_size={args.batch_size}")
 
@@ -406,6 +439,7 @@ def main() -> None:
             device=args.device,
             apply_sigmoid_to_pred=bool(spec["apply_sigmoid_to_pred"]),
             progress_desc=f"{run_tag} | OOD inference",
+            prec_mz_np=prec_ood,
         )
         t1 = time.perf_counter()
         y_pred_val = infer_batches(
@@ -415,6 +449,7 @@ def main() -> None:
             device=args.device,
             apply_sigmoid_to_pred=bool(spec["apply_sigmoid_to_pred"]),
             progress_desc=f"{run_tag} | VAL inference",
+            prec_mz_np=prec_val,
         )
         t2 = time.perf_counter()
 
