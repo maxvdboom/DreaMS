@@ -32,6 +32,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from dreams.definitions import PRETRAINED
 from dreams.models.heads.heads import FingerprintHead
+from dreams.utils import data as du
+from dreams.utils.dformats import DataFormatA
 
 DEFAULT_MODEL_SPECS = [
     {
@@ -330,6 +332,19 @@ def infer_batches(
     
     # Extract spec_preproc from model's backbone for preprocessing each spectrum
     spec_preproc = getattr(getattr(model, "backbone", None), "spec_preproc", None)
+    
+    # Verify spec_preproc is properly initialized (not corrupted from old pickled version)
+    # If corrupted, reconstruct with default parameters
+    if spec_preproc is not None and not hasattr(spec_preproc, 'to_relative_intensities'):
+        print(f"Warning: spec_preproc appears corrupted (missing to_relative_intensities). Reconstructing with defaults.")
+        try:
+            spec_preproc = du.SpectrumPreprocessor(
+                dformat=DataFormatA(), prec_intens=1.0, n_highest_peaks=100,
+                spec_entropy_cleaning=False, precision=32, mz_shift_aug_p=0.0, mz_shift_aug_max=0.0
+            )
+        except Exception as e:
+            print(f"Failed to reconstruct spec_preproc: {e}. Using raw spectra (may give poor results).")
+            spec_preproc = None
 
     with torch.inference_mode():
         for start in tqdm(
