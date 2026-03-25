@@ -1,4 +1,4 @@
-'#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Run batch inference for Axis 2 artifacts on GPU clusters (e.g., H100).
 
 This script only computes and saves model predictions:
