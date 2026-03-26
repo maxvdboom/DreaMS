@@ -356,10 +356,12 @@ def infer_batches(
                 spec_arr = np.asarray(spec, dtype=np.float32)
                 if spec_arr.ndim != 2:
                     raise ValueError(f"Expected single spectrum with 2 dims, got shape={spec_arr.shape}")
-                if spec_arr.shape[0] == 2 and spec_arr.shape[1] != 2:
-                    spec_arr = spec_arr.T
-                if spec_arr.shape[1] != 2:
-                    raise ValueError(f"Spectrum is not in shape (n_peaks, 2) but has shape {spec_arr.shape}")
+                if spec_arr.shape[1] == 2:
+                    high_form = True
+                elif spec_arr.shape[0] == 2:
+                    high_form = False
+                else:
+                    raise ValueError(f"Spectrum is not in shape (n_peaks, 2) or (2, n_peaks); got {spec_arr.shape}")
 
                 prec = None
                 if prec_mz_np is not None:
@@ -367,8 +369,8 @@ def infer_batches(
                     if np.isfinite(p):
                         prec = p
                     if start == 0 and i == 0:
-                        print(f"DEBUG: spec_arr shape before preproc: {spec_arr.shape}")    
-                batch_spec_proc.append(spec_preproc(spec_arr, prec_mz=prec, high_form=False, augment=False))
+                        print(f"DEBUG: spec_arr shape before preproc: {spec_arr.shape}, high_form={high_form}")
+                batch_spec_proc.append(spec_preproc(spec_arr, prec_mz=prec, high_form=high_form, augment=False))
 
             batch_spec = torch.tensor(np.asarray(batch_spec_proc, dtype=np.float32), device=device)
 
