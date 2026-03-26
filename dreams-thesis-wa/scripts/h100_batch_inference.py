@@ -366,6 +366,8 @@ def infer_batches(
                     p = float(prec_mz_np[start + i])
                     if np.isfinite(p):
                         prec = p
+                    if start == 0 and i == 0:
+                        print(f"DEBUG: spec_arr shape before preproc: {spec_arr.shape}")    
                 batch_spec_proc.append(spec_preproc(spec_arr, prec_mz=prec, high_form=False, augment=False))
 
             batch_spec = torch.tensor(np.asarray(batch_spec_proc, dtype=np.float32), device=device)
