@@ -33,7 +33,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from dreams.definitions import PRETRAINED
 from dreams.models.heads.heads import FingerprintHead
 from dreams.utils import data as du
-from dreams.utils.dformats import DataFormatA
+from dreams.utils.dformats import DataFormatBuilder
 
 DEFAULT_MODEL_SPECS = [
     {
@@ -329,22 +329,17 @@ def infer_batches(
 
     use_amp = device == "cuda"
     amp_dtype = torch.bfloat16 if use_amp else None
-    
-    # Extract spec_preproc from model's backbone for preprocessing each spectrum
-    spec_preproc = getattr(getattr(model, "backbone", None), "spec_preproc", None)
-    
-    # Verify spec_preproc is properly initialized (not corrupted from old pickled version)
-    # If corrupted, reconstruct with default parameters
-    if spec_preproc is not None and not hasattr(spec_preproc, 'to_relative_intensities'):
-        print(f"Warning: spec_preproc appears corrupted (missing to_relative_intensities). Reconstructing with defaults.")
-        try:
-            spec_preproc = du.SpectrumPreprocessor(
-                dformat=DataFormatA(), prec_intens=1.0, n_highest_peaks=100,
-                spec_entropy_cleaning=False, precision=32, mz_shift_aug_p=0.0, mz_shift_aug_max=0.0
-            )
-        except Exception as e:
-            print(f"Failed to reconstruct spec_preproc: {e}. Using raw spectra (may give poor results).")
-            spec_preproc = None
+
+    # Match train.py preprocessing (lines 44-49) and LabeledSpectraDataset.__getitem__ exactly.
+    spec_preproc = du.SpectrumPreprocessor(
+        dformat=DataFormatBuilder("A").get_dformat(),
+        prec_intens=1.1,
+        n_highest_peaks=100,
+        spec_entropy_cleaning=False,
+        precision=32,
+        mz_shift_aug_p=0.0,
+        mz_shift_aug_max=0.0,
+    )
 
     with torch.inference_mode():
         for start in tqdm(
@@ -355,22 +350,18 @@ def infer_batches(
         ):
             end = min(start + batch_size, len(spectra_np))
             batch_spec_raw = spectra_np[start:end]
-            
-            # Apply preprocessing to each spectrum if spec_preproc is available
+
             batch_spec_proc = []
-            if spec_preproc is not None:
-                for i, spec in enumerate(batch_spec_raw):
-                    prec = None
-                    if prec_mz_np is not None and i < len(prec_mz_np):
-                        p = float(prec_mz_np[start + i])
-                        if np.isfinite(p):
-                            prec = p
-                    batch_spec_proc.append(spec_preproc(spec, prec_mz=prec, high_form="auto", augment=False))
-                batch_spec = torch.tensor(np.asarray(batch_spec_proc, dtype=np.float32), device=device)
-            else:
-                # Fallback: use raw spectra if spec_preproc not available (e.g., frozen models)
-                batch_spec = torch.tensor(batch_spec_raw, dtype=torch.float32, device=device)
-            
+            for i, spec in enumerate(batch_spec_raw):
+                prec = None
+                if prec_mz_np is not None:
+                    p = float(prec_mz_np[start + i])
+                    if np.isfinite(p):
+                        prec = p
+                batch_spec_proc.append(spec_preproc(spec, prec_mz=prec, high_form=False, augment=False))
+
+            batch_spec = torch.tensor(np.asarray(batch_spec_proc, dtype=np.float32), device=device)
+
             batch_charge = torch.ones(end - start, dtype=torch.float32, device=device)
 
             if use_amp:
