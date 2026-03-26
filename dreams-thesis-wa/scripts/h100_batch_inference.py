@@ -11,6 +11,7 @@ Ground-truth fingerprint arrays (y_true*) can be computed locally once per fp ki
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 import json
 import pathlib
 import re
@@ -30,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from dreams.definitions import PRETRAINED
+from dreams.definitions import FOLD, PRETRAINED
 from dreams.models.heads.heads import FingerprintHead
 from dreams.utils import data as du
 from dreams.utils.dformats import DataFormatBuilder
@@ -125,6 +126,30 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default="cuda" if torch.cuda.is_available() else "cpu",
         choices=["cuda", "cpu", "mps"],
+    )
+    parser.add_argument(
+        "--amp-dtype",
+        type=str,
+        default="none",
+        choices=["none", "float16", "bfloat16"],
+        help=(
+            "Optional CUDA autocast dtype. Defaults to disabled because mixed precision "
+            "changed fingerprint head predictions materially in validation checks."
+        ),
+    )
+    parser.add_argument(
+        "--regression-check-batch-size",
+        type=int,
+        default=32,
+        help=(
+            "Number of validation samples to compare between the training dataloader path "
+            "and the script preprocessing path before full inference."
+        ),
+    )
+    parser.add_argument(
+        "--skip-regression-check",
+        action="store_true",
+        help="Skip the validation regression check that compares the first batch against the training pipeline.",
     )
     return parser.parse_args()
 
@@ -313,7 +338,184 @@ def load_model_compat(ckpt_path: Path, device: str) -> FingerprintHead:
     finally:
         torch.load = original_torch_load
 
-    return model.eval().to(device)
+    return model.eval().float().to(device)
+
+
+def build_train_like_spec_preprocessor() -> du.SpectrumPreprocessor:
+    return du.SpectrumPreprocessor(
+        dformat=DataFormatBuilder("A").get_dformat(),
+        prec_intens=1.1,
+        n_highest_peaks=100,
+        spec_entropy_cleaning=False,
+        precision=32,
+        mz_shift_aug_p=0.0,
+        mz_shift_aug_max=0.0,
+    )
+
+
+def preprocess_spectra_batch(
+    spectra_np: np.ndarray,
+    spec_preproc: du.SpectrumPreprocessor,
+    prec_mz_np: np.ndarray | None = None,
+) -> np.ndarray:
+    batch_spec_proc = []
+    for i, spec in enumerate(spectra_np):
+        spec_arr = np.asarray(spec, dtype=np.float32)
+        if spec_arr.ndim != 2:
+            raise ValueError(f"Expected single spectrum with 2 dims, got shape={spec_arr.shape}")
+        if spec_arr.shape[1] == 2:
+            high_form = True
+        elif spec_arr.shape[0] == 2:
+            high_form = False
+        else:
+            raise ValueError(f"Spectrum is not in shape (n_peaks, 2) or (2, n_peaks); got {spec_arr.shape}")
+
+        prec = None
+        if prec_mz_np is not None:
+            p = float(prec_mz_np[i])
+            if np.isfinite(p):
+                prec = p
+        batch_spec_proc.append(spec_preproc(spec_arr, prec_mz=prec, high_form=high_form, augment=False))
+    return np.asarray(batch_spec_proc, dtype=np.float32)
+
+
+def predict_batch(
+    model: FingerprintHead,
+    batch_spec_np: np.ndarray,
+    batch_charge_np: np.ndarray,
+    device: str,
+    apply_sigmoid_to_pred: bool,
+    amp_dtype: str = "none",
+) -> np.ndarray:
+    batch_spec = torch.tensor(np.asarray(batch_spec_np, dtype=np.float32), device=device)
+    batch_charge = torch.tensor(np.asarray(batch_charge_np, dtype=np.float32), device=device)
+
+    use_amp = device == "cuda" and amp_dtype != "none"
+    amp_torch_dtype = getattr(torch, amp_dtype) if use_amp else None
+
+    with torch.inference_mode():
+        with (
+            torch.autocast(device_type="cuda", dtype=amp_torch_dtype)
+            if use_amp
+            else nullcontext()
+        ):
+            pred = model(batch_spec, batch_charge)
+        if apply_sigmoid_to_pred:
+            pred = torch.sigmoid(pred)
+    return pred.float().detach().cpu().numpy().astype(np.float32)
+
+
+def load_reference_val_batch(
+    finetuning_hdf5: Path,
+    fp_kind: str,
+    batch_size: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    msdata = du.MSData(finetuning_hdf5, in_mem=False)
+    spec_preproc = build_train_like_spec_preprocessor()
+    dataset = msdata.to_torch_dataset(
+        spec_preproc=spec_preproc,
+        label=f"fp_{fp_kind}",
+        dformat=DataFormatBuilder("A").get_dformat(),
+    )
+
+    split_mask = pd.Series(msdata.get_values(FOLD)).apply(
+        lambda x: x.decode("utf-8") if isinstance(x, bytes) else x
+    )
+    if (split_mask == "val").sum() == 0 and (split_mask == "test").sum() > 0:
+        split_mask = split_mask.replace({"test": "val"})
+
+    datamodule = du.SplittedDataModule(
+        dataset=dataset,
+        split_mask=split_mask,
+        batch_size=batch_size,
+        num_workers=0,
+        n_train_samples=None,
+        seed=1,
+    )
+    loader = datamodule.val_dataloader()
+    if loader is None:
+        raise RuntimeError("Regression check could not build a validation dataloader.")
+
+    batch = next(iter(loader))
+    return (
+        batch["spec"].detach().cpu().numpy().astype(np.float32),
+        batch["charge"].detach().cpu().numpy().astype(np.float32),
+    )
+
+
+def run_validation_regression_check(
+    model: FingerprintHead,
+    spec_val: np.ndarray,
+    prec_val: np.ndarray,
+    finetuning_hdf5: Path,
+    fp_kind: str,
+    device: str,
+    apply_sigmoid_to_pred: bool,
+    amp_dtype: str,
+    batch_size: int,
+    reference_cache: dict[tuple[str, int], tuple[np.ndarray, np.ndarray]],
+) -> dict:
+    cache_key = (fp_kind, batch_size)
+    if cache_key not in reference_cache:
+        reference_cache[cache_key] = load_reference_val_batch(
+            finetuning_hdf5=finetuning_hdf5,
+            fp_kind=fp_kind,
+            batch_size=batch_size,
+        )
+
+    ref_spec_np, ref_charge_np = reference_cache[cache_key]
+    script_spec_np = preprocess_spectra_batch(
+        spectra_np=spec_val[:batch_size],
+        spec_preproc=build_train_like_spec_preprocessor(),
+        prec_mz_np=prec_val[:batch_size],
+    )
+    script_charge_np = np.ones((batch_size,), dtype=np.float32)
+
+    spec_max_abs = float(np.max(np.abs(ref_spec_np - script_spec_np)))
+    charge_max_abs = float(np.max(np.abs(ref_charge_np - script_charge_np)))
+
+    ref_pred_np = predict_batch(
+        model=model,
+        batch_spec_np=ref_spec_np,
+        batch_charge_np=ref_charge_np,
+        device=device,
+        apply_sigmoid_to_pred=apply_sigmoid_to_pred,
+        amp_dtype="none",
+    )
+    script_pred_np = predict_batch(
+        model=model,
+        batch_spec_np=script_spec_np,
+        batch_charge_np=script_charge_np,
+        device=device,
+        apply_sigmoid_to_pred=apply_sigmoid_to_pred,
+        amp_dtype=amp_dtype,
+    )
+
+    pred_max_abs = float(np.max(np.abs(ref_pred_np - script_pred_np)))
+    pred_mean_abs = float(np.mean(np.abs(ref_pred_np - script_pred_np)))
+    pred_ok = np.allclose(ref_pred_np, script_pred_np, rtol=1e-5, atol=1e-4)
+    spec_ok = np.allclose(ref_spec_np, script_spec_np, rtol=0.0, atol=1e-6)
+    charge_ok = np.allclose(ref_charge_np, script_charge_np, rtol=0.0, atol=1e-6)
+
+    summary = {
+        "batch_size": int(batch_size),
+        "spec_max_abs": spec_max_abs,
+        "charge_max_abs": charge_max_abs,
+        "pred_max_abs": pred_max_abs,
+        "pred_mean_abs": pred_mean_abs,
+        "passed": bool(spec_ok and charge_ok and pred_ok),
+    }
+
+    if not summary["passed"]:
+        raise RuntimeError(
+            "Validation regression check failed. "
+            f"spec_max_abs={spec_max_abs:.6g}, charge_max_abs={charge_max_abs:.6g}, "
+            f"pred_max_abs={pred_max_abs:.6g}, pred_mean_abs={pred_mean_abs:.6g}, "
+            f"amp_dtype={amp_dtype}. "
+            "The script preprocessing/model path no longer matches the training dataloader path."
+        )
+
+    return summary
 
 
 def infer_batches(
@@ -324,69 +526,34 @@ def infer_batches(
     apply_sigmoid_to_pred: bool,
     progress_desc: str,
     prec_mz_np: np.ndarray | None = None,
+    amp_dtype: str = "none",
 ) -> np.ndarray:
     outputs = []
+    spec_preproc = build_train_like_spec_preprocessor()
 
-    use_amp = device == "cuda"
-    amp_dtype = torch.bfloat16 if use_amp else None
-
-    # Match train.py preprocessing (lines 44-49) and LabeledSpectraDataset.__getitem__ exactly.
-    spec_preproc = du.SpectrumPreprocessor(
-        dformat=DataFormatBuilder("A").get_dformat(),
-        prec_intens=1.1,
-        n_highest_peaks=100,
-        spec_entropy_cleaning=False,
-        precision=32,
-        mz_shift_aug_p=0.0,
-        mz_shift_aug_max=0.0,
-    )
-
-    with torch.inference_mode():
-        for start in tqdm(
-            range(0, len(spectra_np), batch_size),
-            desc=progress_desc,
-            leave=True,
-            dynamic_ncols=True,
-        ):
-            end = min(start + batch_size, len(spectra_np))
-            batch_spec_raw = spectra_np[start:end]
-
-            batch_spec_proc = []
-            for i, spec in enumerate(batch_spec_raw):
-                spec_arr = np.asarray(spec, dtype=np.float32)
-                if spec_arr.ndim != 2:
-                    raise ValueError(f"Expected single spectrum with 2 dims, got shape={spec_arr.shape}")
-                if spec_arr.shape[1] == 2:
-                    high_form = True
-                elif spec_arr.shape[0] == 2:
-                    high_form = False
-                else:
-                    raise ValueError(f"Spectrum is not in shape (n_peaks, 2) or (2, n_peaks); got {spec_arr.shape}")
-
-                prec = None
-                if prec_mz_np is not None:
-                    p = float(prec_mz_np[start + i])
-                    if np.isfinite(p):
-                        prec = p
-                    if start == 0 and i == 0:
-                        print(f"DEBUG: spec_arr shape before preproc: {spec_arr.shape}, high_form={high_form}")
-                batch_spec_proc.append(spec_preproc(spec_arr, prec_mz=prec, high_form=high_form, augment=False))
-
-            batch_spec = torch.tensor(np.asarray(batch_spec_proc, dtype=np.float32), device=device)
-
-            batch_charge = torch.ones(end - start, dtype=torch.float32, device=device)
-
-            if use_amp:
-                with torch.autocast(device_type="cuda", dtype=amp_dtype):
-                    pred = model(batch_spec, batch_charge)
-            else:
-                pred = model(batch_spec, batch_charge)
-
-            if apply_sigmoid_to_pred:
-                pred = torch.sigmoid(pred)
-
-            # torch.bfloat16 tensors cannot be converted to numpy directly.
-            outputs.append(pred.float().detach().cpu().numpy().astype(np.float32))
+    for start in tqdm(
+        range(0, len(spectra_np), batch_size),
+        desc=progress_desc,
+        leave=True,
+        dynamic_ncols=True,
+    ):
+        end = min(start + batch_size, len(spectra_np))
+        batch_spec_np = preprocess_spectra_batch(
+            spectra_np=spectra_np[start:end],
+            spec_preproc=spec_preproc,
+            prec_mz_np=None if prec_mz_np is None else prec_mz_np[start:end],
+        )
+        batch_charge_np = np.ones((end - start,), dtype=np.float32)
+        outputs.append(
+            predict_batch(
+                model=model,
+                batch_spec_np=batch_spec_np,
+                batch_charge_np=batch_charge_np,
+                device=device,
+                apply_sigmoid_to_pred=apply_sigmoid_to_pred,
+                amp_dtype=amp_dtype,
+            )
+        )
 
     return np.concatenate(outputs, axis=0)
 
@@ -425,7 +592,12 @@ def main() -> None:
 
     spec_ood, spec_val, prec_ood, prec_val = load_datasets(args.probing_test, args.finetuning_hdf5)
 
-    print(f"Running {len(specs)} checkpoint(s) on device={args.device}, batch_size={args.batch_size}")
+    precision_label = f"amp={args.amp_dtype}" if args.amp_dtype != "none" else "float32"
+    print(
+        f"Running {len(specs)} checkpoint(s) on device={args.device}, "
+        f"batch_size={args.batch_size}, precision={precision_label}"
+    )
+    reference_batch_cache: dict[tuple[str, int], tuple[np.ndarray, np.ndarray]] = {}
 
     for idx, spec in enumerate(tqdm(specs, desc="Model runs", dynamic_ncols=True), start=1):
         run_tag = spec["run_tag"]
@@ -448,6 +620,29 @@ def main() -> None:
         print(f"Checkpoint: {best_ckpt_path}")
 
         model = load_model_compat(best_ckpt_path, args.device)
+        regression_summary = None
+
+        if not args.skip_regression_check:
+            check_batch_size = min(args.regression_check_batch_size, len(spec_val))
+            print(f"Running regression check on first {check_batch_size} validation samples...")
+            regression_summary = run_validation_regression_check(
+                model=model,
+                spec_val=spec_val,
+                prec_val=prec_val,
+                finetuning_hdf5=args.finetuning_hdf5,
+                fp_kind=spec["fp_kind"],
+                device=args.device,
+                apply_sigmoid_to_pred=bool(spec["apply_sigmoid_to_pred"]),
+                amp_dtype=args.amp_dtype,
+                batch_size=check_batch_size,
+                reference_cache=reference_batch_cache,
+            )
+            print(
+                "Regression check passed: "
+                f"spec_max_abs={regression_summary['spec_max_abs']:.3g}, "
+                f"pred_max_abs={regression_summary['pred_max_abs']:.3g}, "
+                f"pred_mean_abs={regression_summary['pred_mean_abs']:.3g}"
+            )
 
         t0 = time.perf_counter()
         y_pred_ood = infer_batches(
@@ -458,6 +653,7 @@ def main() -> None:
             apply_sigmoid_to_pred=bool(spec["apply_sigmoid_to_pred"]),
             progress_desc=f"{run_tag} | OOD inference",
             prec_mz_np=prec_ood,
+            amp_dtype=args.amp_dtype,
         )
         t1 = time.perf_counter()
         y_pred_val = infer_batches(
@@ -468,6 +664,7 @@ def main() -> None:
             apply_sigmoid_to_pred=bool(spec["apply_sigmoid_to_pred"]),
             progress_desc=f"{run_tag} | VAL inference",
             prec_mz_np=prec_val,
+            amp_dtype=args.amp_dtype,
         )
         t2 = time.perf_counter()
 
@@ -478,6 +675,8 @@ def main() -> None:
             "loss_kind": spec["loss_kind"],
             "apply_sigmoid_to_pred": bool(spec["apply_sigmoid_to_pred"]),
             "device": args.device,
+            "precision_mode": precision_label,
+            "amp_dtype": args.amp_dtype,
             "batch_size": args.batch_size,
             "y_pred_ood_shape": list(y_pred_ood.shape),
             "y_pred_val_shape": list(y_pred_val.shape),
@@ -485,6 +684,8 @@ def main() -> None:
             "seconds_val": t2 - t1,
             "seconds_total": t2 - t0,
         }
+        if regression_summary is not None:
+            metadata["regression_check"] = regression_summary
         save_predictions(run_dir, y_pred_ood, y_pred_val, metadata)
 
         del model
