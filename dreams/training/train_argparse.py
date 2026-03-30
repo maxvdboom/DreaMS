@@ -130,6 +130,8 @@ def parse_args():
     parser.add_argument('--save_top_k', type=int, default=1)
     parser.add_argument('--log_every_n_steps', type=int, default=10)
     parser.add_argument('--val_check_interval', type=float, default=1.)
+    parser.add_argument('--accumulate_grad_batches', type=int, default=1,
+                        help='Number of batches to accumulate before each optimizer step.')
     parser.add_argument('--gradient_clip_val', type=float, default=None)
     parser.add_argument('--log_figs', action='store_true')
     parser.add_argument('--early_stopping_patience', type=int, default=5, help='Number of validation epochs with no improvement after which training will be stopped. Set to 0 to disable.')

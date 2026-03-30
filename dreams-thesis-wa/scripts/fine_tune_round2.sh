@@ -51,6 +51,13 @@ MAP4_RUN_NAME=${MAP4_RUN_NAME:-${MAP4_OBJECTIVE}_${LOSS_LABEL}${RUN_NAME_SUFFIX}
 MAP4_FP_POS_WEIGHT=${MAP4_FP_POS_WEIGHT:-}
 
 CONDITION_KEYS=${CONDITION_KEYS:-maccs}
+PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
+
+DEFAULT_BATCH_SIZE=${DEFAULT_BATCH_SIZE:-256}
+DEFAULT_ACCUMULATE_GRAD_BATCHES=${DEFAULT_ACCUMULATE_GRAD_BATCHES:-1}
+
+HIGH_MEM_BATCH_SIZE=${HIGH_MEM_BATCH_SIZE:-128}
+HIGH_MEM_ACCUMULATE_GRAD_BATCHES=${HIGH_MEM_ACCUMULATE_GRAD_BATCHES:-2}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/.wandb_secrets" ]; then
@@ -73,16 +80,22 @@ resolve_condition() {
             FP_OBJECTIVE="$MACCS_OBJECTIVE"
             RUN_NAME="$MACCS_RUN_NAME"
             FP_POS_WEIGHT="$MACCS_FP_POS_WEIGHT"
+            BATCH_SIZE="$DEFAULT_BATCH_SIZE"
+            ACCUMULATE_GRAD_BATCHES="$DEFAULT_ACCUMULATE_GRAD_BATCHES"
             ;;
         morgan)
             FP_OBJECTIVE="$MORGAN_OBJECTIVE"
             RUN_NAME="$MORGAN_RUN_NAME"
             FP_POS_WEIGHT="$MORGAN_FP_POS_WEIGHT"
+            BATCH_SIZE="$HIGH_MEM_BATCH_SIZE"
+            ACCUMULATE_GRAD_BATCHES="$HIGH_MEM_ACCUMULATE_GRAD_BATCHES"
             ;;
         map4)
             FP_OBJECTIVE="$MAP4_OBJECTIVE"
             RUN_NAME="$MAP4_RUN_NAME"
             FP_POS_WEIGHT="$MAP4_FP_POS_WEIGHT"
+            BATCH_SIZE="$HIGH_MEM_BATCH_SIZE"
+            ACCUMULATE_GRAD_BATCHES="$HIGH_MEM_ACCUMULATE_GRAD_BATCHES"
             ;;
         *)
             echo "Unknown CONDITION_KEYS entry: $condition_key"
@@ -146,6 +159,9 @@ run_condition() {
     echo "  Objective   : $FP_OBJECTIVE"
     echo "  Loss        : $FP_LOSS"
     echo "  Pos weight  : ${FP_POS_WEIGHT:-none}"
+    echo "  Batch size  : $BATCH_SIZE"
+    echo "  Grad accum  : $ACCUMULATE_GRAD_BATCHES"
+    echo "  CUDA alloc  : $PYTORCH_CUDA_ALLOC_CONF"
     echo "  Project     : $WANDB_PROJECT"
     echo "  Run name    : $RUN_NAME"
     echo "  Dataset     : $SCRATCH_DATASET"
@@ -165,12 +181,13 @@ run_condition() {
         --dformat A
         --model DreaMS
         --lr 1.5e-5
-        --batch_size 256
+        --batch_size "$BATCH_SIZE"
         --prec_intens 1.1
         --num_devices 4
         --max_epochs 103
         --log_every_n_steps 5
         --head_depth 1
+        --accumulate_grad_batches "$ACCUMULATE_GRAD_BATCHES"
         --seed 3407
         --train_precision 64
         --use_lr_schedule
@@ -197,6 +214,7 @@ run_condition() {
     echo ""
 
     cd "$SCRATCH_DIR" || exit 3
+    export PYTORCH_CUDA_ALLOC_CONF="$PYTORCH_CUDA_ALLOC_CONF"
     export PYTHONPATH="$HOME/DreaMS:$PYTHONPATH"
 
     srun --export=ALL --preserve-env python3 "$HOME/DreaMS/dreams/training/train.py" \
