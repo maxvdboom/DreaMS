@@ -576,7 +576,7 @@ class FingerprintHead(FineTuningHead):
     def __init__(self, backbone: Path, fp_str: str, lr, batch_size, weight_decay, dropout=0, loss='cos',
                  retrieval_val_pth=None, retrieval_epoch_freq=10, unfreeze_backbone_at_epoch=0,
                  head_depth=1, store_val_out_dir: Path = None, head_phi_depth: int = 0,
-                 pos_weight: Optional[float] = None):
+                 pos_weight: Optional[float] = None, use_lr_schedule: bool = False):
         """
         Initialize the FingerprintHead.
 
@@ -594,6 +594,7 @@ class FingerprintHead(FineTuningHead):
             head_depth (int, optional): Depth of the head. Defaults to 1.
             store_val_out_dir (Path, optional): Directory to store validation outputs. Defaults to None.
             head_phi_depth (int, optional): Depth of the phi network in DeepSets. Defaults to 0.
+            use_lr_schedule (bool, optional): Whether to use OneCycleLR with warmup and cosine decay.
         """
         super().__init__(backbone=backbone, lr=lr, weight_decay=weight_decay, precursor_emb=not head_phi_depth,
                          unfreeze_backbone_at_epoch=unfreeze_backbone_at_epoch)
@@ -604,6 +605,7 @@ class FingerprintHead(FineTuningHead):
         self.batch_size = batch_size
         self.head_depth = head_depth
         self.head_phi_depth = head_phi_depth
+        self.use_lr_schedule = use_lr_schedule
         self.store_val_out_dir = store_val_out_dir
         if self.store_val_out_dir:
             self.store_val_out_dir.mkdir(parents=True, exist_ok=True)
@@ -660,6 +662,38 @@ class FingerprintHead(FineTuningHead):
 
         # Define metrics
         self.val_metrics = FingerprintMetrics(prefix='Val')
+
+    def configure_optimizers(self):
+        """
+        Configure the optimizer for fingerprint fine-tuning.
+
+        Returns:
+            Union[torch.optim.Optimizer, dict]: Adam optimizer only, or Adam with a step-wise OneCycleLR scheduler.
+        """
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+
+        if not self.use_lr_schedule:
+            return optimizer
+
+        total_steps = int(self.trainer.estimated_stepping_batches)
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=self.lr,
+            total_steps=total_steps,
+            pct_start=0.05,
+            anneal_strategy='cos',
+            div_factor=10,
+            final_div_factor=100,
+            cycle_momentum=False
+        )
+
+        return {
+            'optimizer': optimizer,
+            'lr_scheduler': {
+                'scheduler': scheduler,
+                'interval': 'step'
+            }
+        }
 
     def step(self, data, batch_idx):
         """

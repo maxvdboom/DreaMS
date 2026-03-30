@@ -71,6 +71,8 @@ def parse_args():
                         help='Loss for fingerprint fine-tuning heads.')
     parser.add_argument('--fp_pos_weight', type=float, default=None,
                         help='Optional positive class weight for BCE fingerprint loss (helps sparse fingerprints).')
+    parser.add_argument('--use_lr_schedule', action='store_true',
+                        help='Enable OneCycleLR with linear warmup and cosine decay for fingerprint fine-tuning.')
 
     # Model (MS-specific hyperparameters)
     parser.add_argument('--d_fourier', type=int)
